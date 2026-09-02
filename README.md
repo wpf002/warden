@@ -2,38 +2,122 @@
 
 AI-powered SOC pipeline. Security logs in, explained and guardrailed actions out.
 
-Vertical slice implemented in v1: **brute-force login detection and response**.
+```
+SIEM logs -> ingest/normalize -> detection registry -> RAG (Chroma + ATT&CK) -> LLM (Claude)
+          -> guardrails -> actions -> SOC dashboard -> analyst feedback -> knowledge base
+```
 
-```
-SIEM logs -> ingest/normalize -> detection -> RAG (Chroma) -> LLM (Claude) -> guardrails -> actions -> SOC dashboard -> analyst feedback -> knowledge base
-```
+Two rules hold everywhere: **detection is deterministic** (the model explains and
+recommends, it never decides whether something is an alert) and **every action passes
+through guardrails** that are policy in code, versioned with the repo.
 
 ## Quick start
 
 ```bash
 git clone git@github.com:wpf002/warden.git && cd warden
-chmod +x bootstrap.sh && ./bootstrap.sh
+chmod +x bootstrap.sh && ./bootstrap.sh      # needs Python 3.10+
 source .venv/bin/activate
 # put ANTHROPIC_API_KEY in .env, or set WARDEN_LLM=mock to run without one
 python -m warden.cli run
 python -m warden.cli serve   # http://127.0.0.1:8000
 ```
 
+Fully offline: `WARDEN_LLM=mock WARDEN_EMBEDDINGS=hash`.
+
+## Detections
+
+Each detection is one file in `warden/detections/`, registered by decorator, with a
+playbook in the knowledge base and a labeled fixture in `data/eval/`.
+
+| Detection | MITRE | Signal |
+|---|---|---|
+| `brute_force` | T1110.001 | many failures from one IP against few accounts |
+| `password_spray` | T1110.003 | failures from one IP spread thinly across many accounts |
+| `impossible_travel` | T1078 | two successes for one user from geos no one could travel between |
+| `mfa_fatigue` | T1621 | a run of denied/timed-out MFA pushes, scored higher if an approval follows |
+
+```bash
+python -m warden.cli detections            # list the registry
+python -m warden.cli run --detections mfa_fatigue,impossible_travel
+```
+
+Adding one means adding a file:
+
+```python
+@register
+class MyRule(Detection):
+    id = "my_rule"
+    mitre = ["T1078.004"]
+    event_kinds = ("auth", "identity")
+    playbook = "playbook-my-rule"
+
+    def run(self, events): ...   # -> list[Alert], deterministic
+```
+
+## Eval
+
+The yardstick. No change ships without a number.
+
+```bash
+python -m warden.cli eval                  # table
+python -m warden.cli eval --json --fail-under 0.95
+python -m warden.cli eval --no-llm         # detection metrics only, no API calls
+```
+
+A labeled case is `data/eval/<case>/events.jsonl` plus an `expected.json` naming which
+alerts should fire, whether an analyst would call each a TP or FP, and what the guardrails
+should decide. Reported: detection precision/recall/F1 per rule, risk-score calibration
+(Brier against the TP/FP labels), action-decision agreement with the analyst, and
+retrieval hit rate. Regenerate the fixtures with `python scripts/make_eval_fixtures.py`.
+
+Current numbers on the six shipped fixtures (mock analyzer, hash embeddings):
+
+| Metric | Value |
+|---|---|
+| Detection precision / recall / F1 | 1.000 / 1.000 / 1.000 |
+| Risk calibration (Brier, lower better) | 0.037 |
+| Action agreement with analyst | 1.000 (16/16) |
+| Retrieval hit rate (playbook in top 3) | 1.000 (5/5) |
+
+The harness earns its keep: indexing ATT&CK dropped retrieval hit rate from 1.00 to 0.40
+before the metadata filter in `retrieve_for_alert` fixed it. Nothing else would have caught that.
+
+## Knowledge base
+
+Playbooks, policies, past incidents, and learned cases live in `data/knowledge/` as
+markdown and are reviewed like code. On top of that:
+
+```bash
+python -m warden.cli attack-ingest         # ~700 techniques, ~4,400 chunks, ~50MB download
+python -m warden.cli attack-ingest --file enterprise-attack.json   # offline
+```
+
+ATT&CK is reference material, not a general search corpus, so it is reachable only
+through a detection's mapped technique ids. The operational corpus gets the rest of the
+retrieval budget from an unfiltered search. Each ingest writes `data/attack/_manifest.json`
+with the ATT&CK version and object counts.
+
 ## Layout
 
 | Path | What |
 |---|---|
-| `warden/ingest.py` | Load JSONL/syslog-ish auth events, normalize to `AuthEvent`, dedupe, enrich (geo/asset tags) |
-| `warden/detect.py` | Brute-force rule (N failures / window / source IP) plus spray variant. Emits `Alert` |
-| `warden/knowledge.py` | Chunk + embed `data/knowledge/*.md` into Chroma; retrieve by alert context |
-| `warden/llm.py` | Claude via `langchain-anthropic`, structured `Analysis` output. Mock provider for offline runs |
+| `warden/events.py` | Typed `Event` hierarchy (auth, process, network, file, identity, cloud), ECS-shaped |
+| `warden/ingest.py` | Load JSONL/syslog, normalize, dedupe, enrich (geo/asset), synthetic log generator |
+| `warden/detections/` | One file per rule; `@register` puts it in the registry |
+| `warden/detect.py` | Front door: `detect(events, only=...)` |
+| `warden/geo.py` | Country centroids, haversine, implied-speed maths for impossible travel |
+| `warden/knowledge.py` | Chunk + embed into Chroma; technique-filtered and unfiltered retrieval |
+| `warden/attack.py` | MITRE ATT&CK STIX ingest, flatten, render, index, snapshot manifest |
+| `warden/llm.py` | Claude via `langchain-anthropic`, structured `Analysis`. Mock provider for offline runs |
 | `warden/agent.py` | LangGraph workflow: retrieve -> analyze -> guardrail -> act -> record |
-| `warden/guardrails.py` | Action allowlist, risk threshold, human-approval list, IP safelist. Every decision logged |
-| `warden/actions.py` | Mock connectors: firewall block, IAM lock, ticket, notify. Swap for real APIs |
+| `warden/guardrails.py` | Action allowlist, risk thresholds, approval list, IP safelist, evidence binding |
+| `warden/actions.py` | Mock connectors: firewall block, IAM lock, ticket, notify |
+| `warden/evaluate.py` | Eval harness: precision/recall, Brier, action agreement, retrieval hit rate |
 | `warden/feedback.py` | Analyst TP/FP verdicts, writes learned cases back into the knowledge base |
 | `warden/dashboard.py` | FastAPI SOC UI: alerts, analysis, actions, approve/deny, feedback |
-| `warden/cli.py` | `gen-logs`, `index`, `run`, `serve` |
+| `warden/cli.py` | `gen-logs`, `index`, `detections`, `run`, `eval`, `attack-ingest`, `serve` |
 | `data/knowledge/` | Playbooks, policies, MITRE notes, past incidents (RAG sources) |
+| `data/eval/` | Labeled fixtures: events plus expected alerts, verdicts, and guardrail decisions |
 
 ## Config
 
@@ -41,6 +125,7 @@ All settings via `.env` (see `.env.example`). Key ones:
 
 - `WARDEN_LLM=anthropic|mock`
 - `WARDEN_EMBEDDINGS=default|hash` (hash = fully offline)
+- `WARDEN_DETECTIONS` comma list, empty runs every registered rule
 - `WARDEN_AUTO_ACTION_MIN_RISK` risk score needed for auto-execution
 - `WARDEN_HUMAN_APPROVAL_ACTIONS` actions that always wait for an analyst
 
@@ -52,7 +137,7 @@ pytest
 
 ## Roadmap
 
-- Real connectors (Splunk HEC, CrowdStrike, Okta, Jira)
-- More detections (impossible travel, privilege escalation)
-- Cloud deploy (containers + managed vector DB + secrets manager)
-- Prompt/model eval harness on labeled incidents
+See [ROADMAP.md](ROADMAP.md). Phase 1 foundations (event model, detection registry, eval
+harness) and the first slice of Phases 2 and 3 (two new identity detections, ATT&CK
+ingest) are in. Next up: real ingestion adapters, SQLite storage, dashboard auth, and the
+rest of the identity sweep with cross-alert correlation.

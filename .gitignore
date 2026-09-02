@@ -6,3 +6,4 @@ data/chroma/
 data/state/
 data/sample_logs/*.jsonl
 .pytest_cache/
+data/attack/

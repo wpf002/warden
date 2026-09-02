@@ -57,6 +57,7 @@ def index():
     n_fp = sum(c.analyst_verdict == "false_positive" for c in cases)
     rows = "".join(
         f"<tr><td><a href='/case/{c.alert.id}'>{c.alert.id}</a></td><td>{html.escape(c.alert.title)}</td>"
+        f"<td>{c.alert.rule}</td>"
         f"<td>{_sev(c.analysis.severity) if c.analysis else ''}</td><td>{c.analysis.risk_score if c.analysis else ''}</td>"
         f"<td>{html.escape(c.analysis.mitre_attack) if c.analysis else ''}</td><td>{c.status}</td>"
         f"<td>{c.analyst_verdict or ''}</td></tr>"
@@ -71,7 +72,7 @@ def index():
       <form method=post action=/run style='float:right'><button>Run pipeline</button></form>
       <form method=post action=/reindex style='float:right'><button class=secondary>Reindex KB</button></form>
     </div>
-    <table><tr><th>ID</th><th>Alert</th><th>Severity</th><th>Risk</th><th>MITRE</th><th>Status</th><th>Verdict</th></tr>{rows}</table>
+    <table><tr><th>ID</th><th>Alert</th><th>Rule</th><th>Severity</th><th>Risk</th><th>MITRE</th><th>Status</th><th>Verdict</th></tr>{rows}</table>
     """
     return _page("Warden SOC", body)
 
@@ -82,6 +83,7 @@ def case_view(alert_id: str):
     if not c:
         raise HTTPException(404)
     a, an = c.alert, c.analysis
+    detail = " · ".join(f"{k}: <b>{html.escape(str(v))}</b>" for k, v in a.detail.items() if v is not None)
     acts = ""
     for i, r in enumerate(c.actions):
         ctl = ""
@@ -115,8 +117,10 @@ def case_view(alert_id: str):
     <h2>Analyst feedback</h2><div class=card>{verdict}</div>
     <h2>Evidence</h2>
     <div class=card>
-      rule <b>{a.rule}</b> · {a.failed_attempts} failures in {a.window_sec}s · source {a.source_ip} ({a.geo}) · users {html.escape(', '.join(a.users))}
-      · hosts {html.escape(', '.join(a.hosts))} · asset {a.asset_tier} · {a.first_seen:%H:%M:%S} to {a.last_seen:%H:%M:%S}
+      rule <b>{a.rule}</b> {html.escape(' '.join(a.mitre))} · source {html.escape(', '.join(sorted(a.all_ips())) or '-')} ({a.geo})
+      · users {html.escape(', '.join(a.users))} · hosts {html.escape(', '.join(a.hosts) or '-')} · asset {a.asset_tier}
+      · {a.first_seen:%H:%M:%S} to {a.last_seen:%H:%M:%S} ({a.window_sec}s window)
+      <div style='color:#9fb3d1;margin-top:6px'>{detail}</div>
       <div class=mono>{html.escape(chr(10).join(f"{e['ts']}  {e['type']:14} {e['user']:12} {e['host']}" for e in a.evidence))}</div>
     </div>
     <h2>Retrieved context (RAG)</h2><div class=card>{docs}</div>

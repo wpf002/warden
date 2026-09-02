@@ -1,0 +1,22 @@
+{
+  "name": "MFA push bombing ending in an approval",
+  "description": "Seven denied or timed-out pushes in nine minutes, then the user taps approve.",
+  "alerts": [
+    {
+      "rule": "mfa_fatigue",
+      "match": {
+        "user": "asmith",
+        "source_ip": "185.220.101.44"
+      },
+      "label": "true_positive",
+      "risk_min": 80,
+      "expect_actions": {
+        "block_ip": "execute",
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "PB-008: approval after a burst is a presumed compromise."
+    }
+  ]
+}

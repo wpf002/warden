@@ -25,7 +25,7 @@ def evaluate(alert: Alert, analysis: Analysis) -> list[Decision]:
         if a.action == "block_ip" and a.target in settings.ip_safelist:
             out.append(Decision(a, "deny", "target is on infrastructure safelist (SEC-012 §3)"))
             continue
-        if a.action == "block_ip" and a.target != alert.source_ip:
+        if a.action == "block_ip" and a.target not in alert.all_ips():
             out.append(Decision(a, "deny", "model proposed an IP not in the alert evidence"))
             continue
         if a.action == "lock_user" and a.target not in alert.users:

@@ -1,0 +1,21 @@
+{
+  "name": "impossible travel, US to DE in 22 minutes",
+  "description": "Two successful logins for one account 7,000+ km apart. Device fingerprint also changes.",
+  "alerts": [
+    {
+      "rule": "impossible_travel",
+      "match": {
+        "user": "mgarcia",
+        "source_ip": "45.83.140.6"
+      },
+      "label": "true_positive",
+      "risk_min": 60,
+      "expect_actions": {
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "PB-007: never auto-block either leg, one of the two IPs is the real user."
+    }
+  ]
+}

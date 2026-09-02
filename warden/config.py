@@ -23,8 +23,16 @@ class Settings:
     data_dir: Path = field(default_factory=lambda: Path(_env("WARDEN_DATA_DIR", "data")))
     log_file: Path = field(default_factory=lambda: Path(_env("WARDEN_LOG_FILE", "data/sample_logs/auth.jsonl")))
 
+    # detection tuning
     bf_threshold: int = field(default_factory=lambda: int(_env("WARDEN_BF_THRESHOLD", "10")))
     bf_window_sec: int = field(default_factory=lambda: int(_env("WARDEN_BF_WINDOW_SEC", "300")))
+    travel_max_kmh: int = field(default_factory=lambda: int(_env("WARDEN_TRAVEL_MAX_KMH", "900")))
+    travel_min_km: int = field(default_factory=lambda: int(_env("WARDEN_TRAVEL_MIN_KM", "500")))
+    mfa_threshold: int = field(default_factory=lambda: int(_env("WARDEN_MFA_THRESHOLD", "5")))
+    # empty = run every registered detection
+    detections: list[str] = field(
+        default_factory=lambda: [d.strip() for d in _env("WARDEN_DETECTIONS", "").split(",") if d.strip()]
+    )
 
     auto_action_min_risk: int = field(default_factory=lambda: int(_env("WARDEN_AUTO_ACTION_MIN_RISK", "80")))
     # per-rule overrides, "rule:threshold,rule:threshold" (PB-005 allows 70 for spray)
@@ -41,6 +49,14 @@ class Settings:
     @property
     def knowledge_dir(self) -> Path:
         return self.data_dir / "knowledge"
+
+    @property
+    def attack_dir(self) -> Path:
+        return self.data_dir / "attack"
+
+    @property
+    def eval_dir(self) -> Path:
+        return self.data_dir / "eval"
 
     @property
     def chroma_dir(self) -> Path:

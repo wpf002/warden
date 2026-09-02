@@ -1,0 +1,20 @@
+{
+  "name": "password spray against the IdP",
+  "description": "14 failures across 7 accounts from one IP, two attempts each. No success.",
+  "alerts": [
+    {
+      "rule": "password_spray",
+      "match": {
+        "source_ip": "198.51.100.17"
+      },
+      "label": "true_positive",
+      "risk_min": 70,
+      "expect_actions": {
+        "block_ip": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "PB-005 lowers the auto-block threshold to 70 for spray."
+    }
+  ]
+}

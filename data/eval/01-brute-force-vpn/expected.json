@@ -1,0 +1,22 @@
+{
+  "name": "brute force on the VPN gateway, then a success",
+  "description": "18 failures for one account from a Russian IP, followed by a login. Crown-jewel asset.",
+  "alerts": [
+    {
+      "rule": "brute_force",
+      "match": {
+        "source_ip": "203.0.113.42",
+        "user": "john.doe"
+      },
+      "label": "true_positive",
+      "risk_min": 80,
+      "expect_actions": {
+        "block_ip": "execute",
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "PB-004: auto-block the source, hold the account lock for an analyst."
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "name": "an hour of ordinary traffic",
+  "description": "Nothing should fire. Anything that does is a false positive.",
+  "alerts": []
+}

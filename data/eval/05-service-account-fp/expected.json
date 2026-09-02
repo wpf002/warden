@@ -1,0 +1,20 @@
+{
+  "name": "service account failing after a credential rotation",
+  "description": "Textbook false positive: svc-backup grinding from an internal host with a stale secret.",
+  "alerts": [
+    {
+      "rule": "brute_force",
+      "match": {
+        "source_ip": "10.0.7.31",
+        "user": "svc-backup"
+      },
+      "label": "false_positive",
+      "risk_max": 40,
+      "expect_actions": {
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "Detection firing is correct. Auto-blocking an internal host is not."
+    }
+  ]
+}
