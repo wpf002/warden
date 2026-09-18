@@ -127,6 +127,10 @@ def test_noauth_refuses_remote_clients(monkeypatch, tmp_path):
     monkeypatch.delenv("WARDEN_ALLOW_NOAUTH", raising=False)
     remote = TestClient(c.app, client=("203.0.113.7", 5555))
     assert remote.get("/").status_code == 403
+    monkeypatch.setenv("WARDEN_ALLOW_NOAUTH", "0")       # "0" must mean no, not "set"
+    assert remote.get("/").status_code == 403
+    monkeypatch.setenv("WARDEN_ALLOW_NOAUTH", "1")
+    assert remote.get("/").status_code == 200
 
 
 def test_verdict_rejects_bad_values(monkeypatch, tmp_path):
