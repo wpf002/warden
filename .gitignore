@@ -8,3 +8,8 @@ data/sample_logs/*.jsonl
 .pytest_cache/
 data/attack/
 data/real/
+warden/static/console/
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+.claude/

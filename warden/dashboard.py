@@ -1,4 +1,6 @@
-"""SOC dashboard. FastAPI + server-rendered HTML. No build step."""
+"""HTTP entry point. Serves the web console (web/, built into warden/static/console) at "/",
+the JSON API at /api/v1, the Splunk HEC receiver, /metrics, /healthz, and the original
+server-rendered pages at /classic (no build step, useful when the console isn't built)."""
 from __future__ import annotations
 
 import html
@@ -18,6 +20,29 @@ from .pipeline import run
 from .store import CaseStore
 
 app = FastAPI(title="Warden SOC")
+
+from . import obs  # noqa: E402
+
+obs.setup_logging()
+
+
+@app.get("/metrics")
+def metrics(request: Request):
+    """Prometheus scrape endpoint. Set WARDEN_METRICS_TOKEN to require `Authorization: Bearer <token>`."""
+    from fastapi import Response
+    from .config import settings as _s
+    if _s.metrics_token and not hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {_s.metrics_token}"):
+        raise HTTPException(401)
+    body, ctype = obs.render()
+    return Response(body, media_type=ctype)
+
+
+@app.get("/healthz")
+def healthz():
+    from sqlalchemy import text
+    with store.engine.connect() as c:
+        c.execute(text("select 1"))
+    return {"ok": True}
 
 from .api import router as api_router  # noqa: E402
 
@@ -57,7 +82,7 @@ def _sev(s: str) -> str:
     return f'<span class="pill {s}">{s}</span>'
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/classic", response_class=HTMLResponse)
 def index(user: User = Depends(require("viewer"))):
     cases = store.all()
     n_open = sum(c.status != "closed" for c in cases)
@@ -66,7 +91,7 @@ def index(user: User = Depends(require("viewer"))):
     n_tp = sum(c.analyst_verdict == "true_positive" for c in cases)
     n_fp = sum(c.analyst_verdict == "false_positive" for c in cases)
     rows = "".join(
-        f"<tr><td><a href='/case/{c.alert.id}'>{c.alert.id}</a></td><td>{html.escape(c.alert.title)}</td>"
+        f"<tr><td><a href='/classic/case/{c.alert.id}'>{c.alert.id}</a></td><td>{html.escape(c.alert.title)}</td>"
         f"<td>{c.alert.rule}</td>"
         f"<td>{_sev(c.analysis.severity) if c.analysis else ''}</td><td>{c.analysis.risk_score if c.analysis else ''}</td>"
         f"<td>{html.escape(c.analysis.mitre_attack) if c.analysis else ''}</td><td>{c.status}</td>"
@@ -79,16 +104,16 @@ def index(user: User = Depends(require("viewer"))):
       <span class=kpi><b>{len(cases)}</b>alerts</span><span class=kpi><b>{n_open}</b>open</span>
       <span class=kpi><b>{n_pending}</b>awaiting approval</span><span class=kpi><b>{n_exec}</b>actions executed</span>
       <span class=kpi><b>{n_tp}/{n_fp}</b>TP / FP</span>
-      <a href=/detections>detections</a> · <a href=/exclusions>exclusions</a> · <a href=/proposals>proposals</a> · <a href=/audit>audit</a>
-      <form method=post action=/run style='float:right'><button>Run pipeline</button></form>
-      <form method=post action=/reindex style='float:right'><button class=secondary>Reindex KB</button></form>
+      <a href=/classic/detections>detections</a> · <a href=/classic/exclusions>exclusions</a> · <a href=/classic/proposals>proposals</a> · <a href=/classic/audit>audit</a> · <a href=/>new console</a>
+      <form method=post action=/classic/run style='float:right'><button>Run pipeline</button></form>
+      <form method=post action=/classic/reindex style='float:right'><button class=secondary>Reindex KB</button></form>
     </div>
     <table><tr><th>ID</th><th>Alert</th><th>Rule</th><th>Severity</th><th>Risk</th><th>MITRE</th><th>Status</th><th>Verdict</th></tr>{rows}</table>
     """
     return _page("Warden SOC", body)
 
 
-@app.get("/case/{alert_id}", response_class=HTMLResponse)
+@app.get("/classic/case/{alert_id}", response_class=HTMLResponse)
 def case_view(alert_id: str, user: User = Depends(require("viewer"))):
     c = store.get(alert_id)
     if not c:
@@ -99,10 +124,10 @@ def case_view(alert_id: str, user: User = Depends(require("viewer"))):
     for i, r in enumerate(c.actions):
         ctl = ""
         if r.status == "pending_approval" and c.status != "closed":
-            ctl = (f"<form method=post action='/case/{a.id}/action/{i}/approve'><button>Approve</button></form>"
-                   f"<form method=post action='/case/{a.id}/action/{i}/deny'><button class=secondary>Deny</button></form>")
+            ctl = (f"<form method=post action='/classic/case/{a.id}/action/{i}/approve'><button>Approve</button></form>"
+                   f"<form method=post action='/classic/case/{a.id}/action/{i}/deny'><button class=secondary>Deny</button></form>")
         elif r.status == "executed" and r.receipt:
-            ctl = f"<form method=post action='/case/{a.id}/action/{i}/rollback'><button class=secondary>Roll back</button></form>"
+            ctl = f"<form method=post action='/classic/case/{a.id}/action/{i}/rollback'><button class=secondary>Roll back</button></form>"
         acts += f"<tr><td class={r.status}>{r.status}</td><td>{r.action}</td><td>{html.escape(r.target)}</td><td>{html.escape(r.detail)}</td><td>{ctl}</td></tr>"
     docs = "".join(f"<div class=doc><b>{html.escape(d['id'])}</b> <span style='color:#5c6f91'>dist {d['distance']}</span>"
                    f"<div class=mono>{html.escape(d['text'][:600])}</div></div>" for d in c.retrieved_docs)
@@ -112,13 +137,13 @@ def case_view(alert_id: str, user: User = Depends(require("viewer"))):
     reasons = "".join(f"<option value={k}>{html.escape(v)}</option>" for k, v in FP_REASONS.items())
     verdict = (f"<p>Analyst verdict: <b>{c.analyst_verdict}</b> {html.escape(c.analyst_reason)} {html.escape(c.analyst_note)}</p>"
                if c.analyst_verdict else
-               f"<form method=post action='/case/{a.id}/verdict'><input type=text name=note placeholder='note (optional)'> "
+               f"<form method=post action='/classic/case/{a.id}/verdict'><input type=text name=note placeholder='note (optional)'> "
                f"<button name=verdict value=true_positive>True positive</button><br><br>"
                f"<select name=reason><option value=''>FP reason...</option>{reasons}</select> "
                f"<label><input type=checkbox name=suppress value=1> mute this rule for this entity for 30 days</label> "
                f"<button name=verdict value=false_positive class=secondary>False positive</button></form>")
     body = f"""
-    <p><a href=/>&larr; alerts</a></p>
+    <p><a href=/classic>&larr; alerts</a></p>
     <h1>{a.id} <span style='color:#5c6f91;font-weight:400'>{html.escape(a.title)}</span></h1>
     <div class=card>
       {_sev(an.severity) if an else ''} risk <b>{an.risk_score if an else '?'}</b> &nbsp; {html.escape(an.mitre_attack) if an else ''}
@@ -146,43 +171,43 @@ def case_view(alert_id: str, user: User = Depends(require("viewer"))):
     return _page(a.id, body)
 
 
-@app.post("/run")
+@app.post("/classic/run")
 def run_pipeline(user: User = Depends(require("analyst"))):
     run(kb=_kb(), analyzer=get_analyzer(), store=store)
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/classic", status_code=303)
 
 
-@app.post("/reindex")
+@app.post("/classic/reindex")
 def reindex(user: User = Depends(require("admin"))):
     _kb().sync()
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/classic", status_code=303)
 
 
-@app.post("/case/{alert_id}/action/{idx}/approve")
+@app.post("/classic/case/{alert_id}/action/{idx}/approve")
 def approve(alert_id: str, idx: int, user: User = Depends(require("analyst"))):
     c = store.get(alert_id) or _404()
     feedback.approve_action(c, idx, store, actor=user.name)
-    return RedirectResponse(f"/case/{alert_id}", status_code=303)
+    return RedirectResponse(f"/classic/case/{alert_id}", status_code=303)
 
 
-@app.post("/case/{alert_id}/action/{idx}/rollback")
+@app.post("/classic/case/{alert_id}/action/{idx}/rollback")
 def rollback(alert_id: str, idx: int, user: User = Depends(require("analyst"))):
     c = store.get(alert_id) or _404()
     try:
         feedback.rollback_action(c, idx, store, actor=user.name)
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
-    return RedirectResponse(f"/case/{alert_id}", status_code=303)
+    return RedirectResponse(f"/classic/case/{alert_id}", status_code=303)
 
 
-@app.post("/case/{alert_id}/action/{idx}/deny")
+@app.post("/classic/case/{alert_id}/action/{idx}/deny")
 def deny(alert_id: str, idx: int, user: User = Depends(require("analyst"))):
     c = store.get(alert_id) or _404()
     feedback.deny_action(c, idx, store, actor=user.name)
-    return RedirectResponse(f"/case/{alert_id}", status_code=303)
+    return RedirectResponse(f"/classic/case/{alert_id}", status_code=303)
 
 
-@app.post("/case/{alert_id}/verdict")
+@app.post("/classic/case/{alert_id}/verdict")
 def verdict(alert_id: str, verdict: str = Form(...), note: str = Form(""), reason: str = Form(""),
             suppress: str = Form(""), user: User = Depends(require("analyst"))):
     if verdict not in ("true_positive", "false_positive"):
@@ -192,7 +217,7 @@ def verdict(alert_id: str, verdict: str = Form(...), note: str = Form(""), reaso
         feedback.record_verdict(c, verdict, note, store, _kb(), actor=user.name, reason=reason, suppress=bool(suppress))
     except ValueError as e:
         raise HTTPException(422, str(e)) from None
-    return RedirectResponse(f"/case/{alert_id}", status_code=303)
+    return RedirectResponse(f"/classic/case/{alert_id}", status_code=303)
 
 
 @app.post("/services/collector/event")
@@ -234,7 +259,7 @@ async def hec_event(request: Request):
     return {"text": "Success", "code": 0, "accepted": len(out), "stored": added, "tenant": tenant}
 
 
-@app.get("/detections", response_class=HTMLResponse)
+@app.get("/classic/detections", response_class=HTMLResponse)
 def detections_view(user: User = Depends(require("viewer"))):
     from .detect import load_all
     from .stats import detection_stats, threshold_bump
@@ -248,37 +273,37 @@ def detections_view(user: User = Depends(require("viewer"))):
                  f"<td>{s.tp if s else 0}</td><td>{s.fp if s else 0}</td><td>{fpr}</td>"
                  f"<td>{'+' + str(threshold_bump(s)) if threshold_bump(s) else ''}</td>"
                  f"<td>{html.escape(', '.join(s.fp_reasons)) if s else ''}</td><td class=mono>{spark}</td></tr>")
-    return _page("Detections", "<p><a href=/>&larr; alerts</a></p><h1>Detection health (30 days)</h1>"
+    return _page("Detections", "<p><a href=/classic>&larr; alerts</a></p><h1>Detection health (30 days)</h1>"
                  "<table><tr><th>Rule</th><th>MITRE</th><th>Fired</th><th>TP</th><th>FP</th><th>FP rate</th>"
                  f"<th>Threshold bump</th><th>FP reasons</th><th>Weekly (oldest first)</th></tr>{rows}</table>")
 
 
-@app.get("/exclusions", response_class=HTMLResponse)
+@app.get("/classic/exclusions", response_class=HTMLResponse)
 def exclusions_view(user: User = Depends(require("viewer"))):
     rows = "".join(
         f"<tr><td>#{e['id']}</td><td>{e['rule']}</td><td>{e['field']}={html.escape(e['value'])}</td><td>{e['reason']}</td>"
         f"<td>{html.escape(e['created_by'] or '')}</td><td>{e['expires']:%Y-%m-%d}</td><td>{e['hits']}</td>"
-        f"<td><form method=post action='/exclusions/{e['id']}/expire'><button class=secondary>Expire</button></form></td></tr>"
+        f"<td><form method=post action='/classic/exclusions/{e['id']}/expire'><button class=secondary>Expire</button></form></td></tr>"
         for e in store.exclusions())
-    return _page("Exclusions", "<p><a href=/>&larr; alerts</a></p><h1>Active exclusions</h1><table><tr><th>Id</th>"
+    return _page("Exclusions", "<p><a href=/classic>&larr; alerts</a></p><h1>Active exclusions</h1><table><tr><th>Id</th>"
                  f"<th>Rule</th><th>Entity</th><th>Reason</th><th>By</th><th>Expires</th><th>Hits</th><th></th></tr>{rows}</table>")
 
 
-@app.post("/exclusions/{ex_id}/expire")
+@app.post("/classic/exclusions/{ex_id}/expire")
 def expire_exclusion(ex_id: int, user: User = Depends(require("analyst"))):
     store.expire_exclusion(ex_id, user.name)
-    return RedirectResponse("/exclusions", status_code=303)
+    return RedirectResponse("/classic/exclusions", status_code=303)
 
 
-@app.get("/proposals", response_class=HTMLResponse)
+@app.get("/classic/proposals", response_class=HTMLResponse)
 def proposals_view(user: User = Depends(require("viewer"))):
     from . import proposals
     rows = "".join(
-        f"<tr><td><a href='/proposals/{p['id']}'>{p['id']}</a></td><td>{p['status']}</td><td>{html.escape(p['rule_id'] or '')}</td>"
+        f"<tr><td><a href='/classic/proposals/{p['id']}'>{p['id']}</a></td><td>{p['status']}</td><td>{html.escape(p['rule_id'] or '')}</td>"
         f"<td>{p['trigger']}</td><td>{html.escape(p['source'] or '')}</td><td>{p['created']:%Y-%m-%d %H:%M}</td>"
         f"<td>{('<a href=' + html.escape(p['pr_url']) + '>PR</a>') if p['pr_url'] else ''}</td></tr>"
         for p in proposals.list_proposals(store.engine))
-    return _page("Proposals", "<p><a href=/>&larr; alerts</a></p><h1>Detection proposals</h1><table><tr><th>Id</th>"
+    return _page("Proposals", "<p><a href=/classic>&larr; alerts</a></p><h1>Detection proposals</h1><table><tr><th>Id</th>"
                  f"<th>Status</th><th>Rule</th><th>Trigger</th><th>Source</th><th>Created</th><th></th></tr>{rows}</table>")
 
 
@@ -293,10 +318,10 @@ def proposal_view(pid: str, user: User = Depends(require("viewer"))):
                    for h in ev.get("historical_hits", []))
     ctl = ""
     if p["status"] == "ready_for_review" and user.can("admin"):
-        ctl = (f"<form method=post action='/proposals/{pid}/review'><input type=text name=note placeholder='review note'> "
+        ctl = (f"<form method=post action='/classic/proposals/{pid}/review'><input type=text name=note placeholder='review note'> "
                f"<button name=decision value=approve>Approve and open PR</button>"
                f"<button name=decision value=reject class=secondary>Reject</button></form>")
-    body = (f"<p><a href=/proposals>&larr; proposals</a></p><h1>{pid} <span style='color:#5c6f91'>{html.escape(p['rule_id'] or '')}</span></h1>"
+    body = (f"<p><a href=/classic/proposals>&larr; proposals</a></p><h1>{pid} <span style='color:#5c6f91'>{html.escape(p['rule_id'] or '')}</span></h1>"
             f"<div class=card>status <b>{p['status']}</b> · trigger {p['trigger']} · source {html.escape(p['source'] or '')} · "
             f"model {html.escape(p['model'] or '')} · prompt {html.escape(p['prompt_version'] or '')}"
             f"<p>{html.escape(p['rationale'] or '')}</p>{ctl}</div>"
@@ -305,22 +330,22 @@ def proposal_view(pid: str, user: User = Depends(require("viewer"))):
     return _page(pid, body)
 
 
-@app.post("/proposals/{pid}/review")
+@app.post("/classic/proposals/{pid}/review")
 def proposal_review(pid: str, decision: str = Form(...), note: str = Form(""), user: User = Depends(require("admin"))):
     from . import proposals
     try:
         proposals.review(pid, decision, user.name, note, store=store)
     except (KeyError, ValueError) as e:
         raise HTTPException(422, str(e)) from None
-    return RedirectResponse(f"/proposals/{pid}", status_code=303)
+    return RedirectResponse(f"/classic/proposals/{pid}", status_code=303)
 
 
-@app.get("/audit", response_class=HTMLResponse)
+@app.get("/classic/audit", response_class=HTMLResponse)
 def audit_view(user: User = Depends(require("viewer"))):
     rows = "".join(f"<tr><td>{r['ts']:%Y-%m-%d %H:%M:%S}</td><td>{html.escape(r['actor'])}</td><td>{r['action']}</td>"
-                   f"<td><a href='/case/{html.escape(r['target'])}'>{html.escape(r['target'])}</a></td>"
+                   f"<td><a href='/classic/case/{html.escape(r['target'])}'>{html.escape(r['target'])}</a></td>"
                    f"<td class=mono>{html.escape(str(r['detail']))}</td></tr>" for r in store.audit_log())
-    return _page("Audit", f"<p><a href=/>&larr; alerts</a></p><h1>Audit log</h1>"
+    return _page("Audit", f"<p><a href=/classic>&larr; alerts</a></p><h1>Audit log</h1>"
                           f"<table><tr><th>When</th><th>Who</th><th>Action</th><th>Case</th><th>Detail</th></tr>{rows}</table>")
 
 
@@ -331,3 +356,23 @@ def api_cases(user: User = Depends(require("viewer"))):
 
 def _404():
     raise HTTPException(404)
+
+
+# ---------------------------------------------------------------- web console
+from pathlib import Path as _Path  # noqa: E402
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+CONSOLE = _Path(__file__).parent / "static" / "console"
+if (CONSOLE / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=CONSOLE / "assets"), name="assets")
+
+
+@app.get("/", response_class=HTMLResponse)
+def console(user: User = Depends(require("viewer"))):
+    """The SPA shell requires sign-in so the browser prompts for credentials (basic auth)
+    before any API call; the API enforces roles and tenancy on every request."""
+    idx = CONSOLE / "index.html"
+    if not idx.exists():
+        return RedirectResponse("/classic", status_code=307)
+    return HTMLResponse(idx.read_text(), headers={"Cache-Control": "no-cache"})

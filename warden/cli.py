@@ -262,6 +262,30 @@ def cmd_proposals(a):
         print(f"{p['id']}  {p['status']:18} {p['rule_id'] or '':32} {p['trigger']:13} {p['pr_url'] or ''}")
 
 
+def cmd_demo(a):
+    """Load a representative set of labeled scenarios into the store so the console has
+    something real to show: identity chains, endpoint and cloud incidents, a planted
+    anomaly, benign noise. Mock analyzer unless an API key is configured."""
+    from . import evaluate
+    from .ingest import load_file
+    from .knowledge import KnowledgeBase
+    from .llm import get_analyzer
+    from .pipeline import run
+    from .store import CaseStore
+    store = CaseStore()
+    kb = KnowledgeBase()
+    kb.sync()
+    picks = ["01-", "04-", "05-", "07-", "09-", "13-", "18-", "19-", "20-", "21-", "24-", "26-", "27-", "29-"]
+    n = 0
+    for c in evaluate.discover():
+        if not any(c.events_file.parent.name.startswith(p) for p in picks):
+            continue
+        if c.history_file:
+            store.add_events(load_file(c.history_file))
+        n += len(run(events=load_file(c.events_file), kb=kb, analyzer=get_analyzer(), store=store))
+    print(f"loaded {n} cases into {settings.data_dir / 'state'}; start the console with `warden serve`")
+
+
 def cmd_serve(a):
     import uvicorn
     uvicorn.run("warden.dashboard:app", host=a.host, port=a.port, reload=False)
@@ -344,6 +368,9 @@ def main(argv=None):
     pq.add_argument("--note", default=None)
     pq.add_argument("--no-pr", action="store_true", help="approve without opening a pull request")
     pq.set_defaults(fn=cmd_proposals)
+
+    dm = sub.add_parser("demo", help="load sample scenarios so the console has cases to show")
+    dm.set_defaults(fn=cmd_demo)
 
     hp = sub.add_parser("hash-password", help="hash a password for WARDEN_USERS")
     hp.add_argument("--password", default=None, help="omit to be prompted")

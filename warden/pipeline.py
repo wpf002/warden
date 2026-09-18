@@ -1,12 +1,12 @@
 """End-to-end: logs -> alerts -> agent -> cases."""
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .agent import run_alert
 from .config import settings
-from . import baselines, intel
+from . import baselines, intel, obs
 from .correlate import correlate
 from .stats import detection_stats
 from .detect import detect
@@ -27,8 +27,14 @@ def run(log_file: Path | None = None, kb: KnowledgeBase | None = None, analyzer=
         kb.record_snapshot(store.engine if store else None)
     analyzer = analyzer or get_analyzer()
 
+    obs.new_trace()
     if events is None:
-        events = load_file(log_file or settings.log_file, fmt=fmt)
+        with obs.span("ingest"):
+            events = load_file(log_file or settings.log_file, fmt=fmt)
+    now = datetime.now(timezone.utc)
+    for e in events:
+        obs.EVENTS.labels(e.kind, e.source or "unknown").inc()
+        obs.INGEST_LAG.observe(max(0.0, (now - e.ts).total_seconds()))
     prior = []
     if events:
         start = min(e.ts for e in events)
@@ -37,13 +43,17 @@ def run(log_file: Path | None = None, kb: KnowledgeBase | None = None, analyzer=
     exclusions = store.exclusions()
     muted = {(ex["value"], ex["field"].split(":", 1)[1]) for ex in exclusions if ex["field"].startswith("feature:")}
     profiles = baselines.load_profiles(store)
-    alerts = intel.enrich(detect(events, only=only, prior=prior, ioc_lookup=lambda v: intel.lookup(v, store.engine),
-                                 suppressed_features=muted, profiles=profiles), store.engine)
+    with obs.span("detect", events=len(events)):
+        alerts = intel.enrich(detect(events, only=only, prior=prior, ioc_lookup=lambda v: intel.lookup(v, store.engine),
+                                     suppressed_features=muted, profiles=profiles), store.engine)
+    for a in alerts:
+        obs.ALERTS.labels(a.rule).inc()
     anomalous = {(a.detail["entity_type"], a.detail["entity"], a.detail["day"]) for a in alerts
                  if a.detail.get("source") == "anomaly"}
     if profiles or prior:
         baselines.update(store, profiles or baselines.build_profiles(prior), events, anomalous)
-    subjects = correlate(alerts)
+    with obs.span("correlate", alerts=len(alerts)):
+        subjects = correlate(alerts)
     stats = detection_stats(store)
     cases: list[Case] = []
     for subject in subjects:

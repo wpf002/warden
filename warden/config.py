@@ -18,6 +18,12 @@ class Settings:
     llm_provider: str = field(default_factory=lambda: _env("WARDEN_LLM", "anthropic"))
     model: str = field(default_factory=lambda: _env("WARDEN_MODEL", "claude-opus-5"))
     proposal_model: str = field(default_factory=lambda: _env("WARDEN_PROPOSAL_MODEL", "claude-opus-5"))
+    model_triage: str = field(default_factory=lambda: _env("WARDEN_MODEL_TRIAGE", "claude-sonnet-5"))
+    llm_base_url: str = field(default_factory=lambda: _env("WARDEN_LLM_BASE_URL", ""))     # openai-compatible providers
+    llm_api_key: str = field(default_factory=lambda: _env("WARDEN_LLM_API_KEY", ""))
+    log_format: str = field(default_factory=lambda: _env("WARDEN_LOG_FORMAT", "text"))
+    log_level: str = field(default_factory=lambda: _env("WARDEN_LOG_LEVEL", "info"))
+    metrics_token: str = field(default_factory=lambda: _env("WARDEN_METRICS_TOKEN", ""))
     effort: str = field(default_factory=lambda: _env("WARDEN_EFFORT", "medium"))
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY", ""))
     # needed only when the key is not scoped to a workspace
@@ -143,7 +149,7 @@ class Settings:
         return self.data_dir / "state"
 
     def __post_init__(self) -> None:
-        if self.llm_provider == "anthropic" and not self.anthropic_api_key:
+        if self.llm_provider == "anthropic" and not self.anthropic_api_key and not os.environ.get("ANTHROPIC_AUTH_TOKEN"):
             # Fail soft: run offline rather than crash. Loud about it.
             print("[warden] ANTHROPIC_API_KEY not set, falling back to WARDEN_LLM=mock")
             self.llm_provider = "mock"

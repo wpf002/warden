@@ -95,7 +95,18 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0, policy=None, verif
     from .tenancy import policy as _policy
     pol = policy or _policy()
     out: list[Decision] = []
+    ticketed, notified, seen = False, set(), set()
     for a in analysis.recommended_actions:
+        if (a.action, a.target) in seen:
+            out.append(Decision(a, "deny", "duplicate of an earlier recommendation"))
+            continue
+        seen.add((a.action, a.target))
+        if a.action == "create_ticket" and ticketed:
+            out.append(Decision(a, "deny", "one ticket per case"))
+            continue
+        if a.action == "notify" and (a.target or "soc") in notified:
+            out.append(Decision(a, "deny", "channel already notified for this case"))
+            continue
         if a.action in NO_OP:
             out.append(Decision(a, "deny", "no-op"))
             continue
@@ -146,6 +157,10 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0, policy=None, verif
             continue
         # cheap, reversible, always-on actions run regardless of risk
         if a.action in LOW_IMPACT:
+            if a.action == "create_ticket":
+                ticketed = True
+            if a.action == "notify":
+                notified.add(a.target or "soc")
             out.append(Decision(a, "execute", "low-impact action, always allowed"))
             continue
         if analysis.false_positive_likelihood == "high":

@@ -106,9 +106,9 @@ def test_basic_auth_and_roles(monkeypatch, tmp_path):
     assert c.get("/").status_code == 401
     assert c.get("/", headers=_basic("alice", "wrong")).status_code == 401
     assert c.get("/", headers=_basic("vic", "v")).status_code == 200
-    assert c.post("/run", headers=_basic("vic", "v")).status_code == 403          # viewer cannot run
-    assert c.post("/reindex", headers=_basic("alice", "a")).status_code == 403    # analyst is not admin
-    assert c.get("/audit", headers=_basic("alice", "a")).status_code == 200
+    assert c.post("/classic/run", headers=_basic("vic", "v")).status_code == 403          # viewer cannot run
+    assert c.post("/classic/reindex", headers=_basic("alice", "a")).status_code == 403    # analyst is not admin
+    assert c.get("/classic/audit", headers=_basic("alice", "a")).status_code == 200
 
 
 def test_proxy_auth_trusts_only_configured_hops(monkeypatch, tmp_path):
@@ -118,7 +118,7 @@ def test_proxy_auth_trusts_only_configured_hops(monkeypatch, tmp_path):
     assert r.status_code == 403          # TestClient's address is not a trusted proxy
     monkeypatch.setattr(auth, "_trusted", lambda host: True)
     assert c.get("/", headers={"x-forwarded-user": "carol", "x-forwarded-groups": "soc-analysts"}).status_code == 200
-    assert c.post("/reindex", headers={"x-forwarded-user": "carol", "x-forwarded-groups": "soc-analysts"}).status_code == 403
+    assert c.post("/classic/reindex", headers={"x-forwarded-user": "carol", "x-forwarded-groups": "soc-analysts"}).status_code == 403
 
 
 def test_noauth_refuses_remote_clients(monkeypatch, tmp_path):
@@ -131,7 +131,7 @@ def test_noauth_refuses_remote_clients(monkeypatch, tmp_path):
 
 def test_verdict_rejects_bad_values(monkeypatch, tmp_path):
     c = _client(monkeypatch, tmp_path, "none")
-    assert c.post("/case/X/verdict", data={"verdict": "maybe"}).status_code == 422
+    assert c.post("/classic/case/X/verdict", data={"verdict": "maybe"}).status_code == 422
 
 
 def test_hec_receiver(monkeypatch, tmp_path):

@@ -10,7 +10,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from . import actions, guardrails
+from . import actions, guardrails, obs
 from .knowledge import KnowledgeBase
 from .llm import PROMPT_VERSION, Analyzer
 from .models import ActionResult, Alert, Case
@@ -25,7 +25,8 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore, stats: 
     stats = stats or {}
     def retrieve(state: State) -> State:
         c = state["case"]
-        c.retrieved_docs = kb.retrieve_for_alert(c.alert)
+        with obs.span("retrieve", case=c.alert.id):
+            c.retrieved_docs = kb.retrieve_for_alert(c.alert)
         return {"case": c}
 
     def analyze(state: State) -> State:
@@ -38,13 +39,21 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore, stats: 
         err = None
         try:
             track = [stats[r].as_prior() for r in dict.fromkeys(c.alert.rules()) if r in stats]
-            c.analysis = analyzer.analyze(c.alert, c.retrieved_docs, {"track_record": track})
+            with obs.span("analyze", case=c.alert.id):
+                c.analysis = analyzer.analyze(c.alert, c.retrieved_docs, {"track_record": track})
         except Exception as e:  # noqa: BLE001 - logged, then re-raised
             err = f"{type(e).__name__}: {e}"
             raise
         finally:
             u = getattr(analyzer, "last_usage", {}) or {}
             c.model = u.get("model") or getattr(analyzer, "model", "")
+            elapsed = time.monotonic() - t0
+            obs.LLM_SECONDS.labels(c.model or "unknown", u.get("stage", "analyze")).observe(elapsed)
+            if u.get("cost_usd"):
+                obs.LLM_COST.labels(c.model).inc(u["cost_usd"])
+            for d in ("input_tokens", "output_tokens"):
+                if u.get(d):
+                    obs.LLM_TOKENS.labels(c.model, d.split("_")[0]).inc(u[d])
             store.log_llm_call(
                 subject_id=c.alert.id, stage="analyze", prompt_version=PROMPT_VERSION, model=c.model,
                 kb_snapshot=c.kb_snapshot, retrieved=[d["id"] for d in c.retrieved_docs],
@@ -101,5 +110,18 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore, stats: 
 
 def run_alert(alert: Alert, kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore, stats: dict | None = None) -> Case:
     graph = build_graph(kb, analyzer, store, stats)
-    out = graph.invoke({"case": Case(alert=alert, incident_id=alert.id if alert.is_incident else None)})
-    return out["case"]
+    tok = obs.new_trace(alert.id)
+    try:
+        with obs.collect_spans() as spans:
+            out = graph.invoke({"case": Case(alert=alert, incident_id=alert.id if alert.is_incident else None)})
+        case = out["case"]
+        case.spans = spans
+        for r in case.actions:
+            obs.ACTIONS.labels(r.action, r.status).inc()
+        obs.CASES.labels("incident" if alert.is_incident else "alert").inc()
+        store.save(case)
+        obs.event("case analyzed", case=alert.id, rules=alert.rules(), risk=case.analysis.risk_score if case.analysis else None,
+                  status=case.status, model=case.model, ms=sum(s["ms"] for s in spans))
+        return case
+    finally:
+        obs._trace.reset(tok)

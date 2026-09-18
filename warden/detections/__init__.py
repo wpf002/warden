@@ -105,6 +105,11 @@ def run_all(events: list[Event], only: list[str] | None = None, prior: list[Even
         if hasattr(det, "suppressed_features"):
             det.suppressed_features = suppressed_features or set()
             det.stored_profiles = profiles or {}
+        import time as _t
+
+        from ..obs import RULE
+        t0 = _t.perf_counter()
         alerts.extend(det.run(det._select(events)))
+        RULE.labels(det.id).observe(_t.perf_counter() - t0)
     alerts.sort(key=lambda a: (a.ts, a.rule, a.id))
     return alerts

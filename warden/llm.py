@@ -64,6 +64,7 @@ class AnthropicAnalyzer:
     """
 
     FALLBACK_BETA = "server-side-fallback-2026-07-01"
+    FALLBACK_MODELS = {"claude-opus-5", "claude-fable-5-1"}     # server-side refusal fallbacks
 
     def __init__(self, model: str | None = None, effort: str | None = None, client=None):
         import anthropic
@@ -81,6 +82,9 @@ class AnthropicAnalyzer:
             context=_format_context(docs),
             track_record=_track(context),
         )
+        kw = {}
+        if self.model in self.FALLBACK_MODELS:
+            kw = {"betas": [self.FALLBACK_BETA], "fallbacks": "default"}
         resp = self.client.beta.messages.parse(
             model=self.model,
             max_tokens=16000,
@@ -89,8 +93,7 @@ class AnthropicAnalyzer:
             output_format=Analysis,
             output_config={"effort": self.effort},
             thinking={"type": "adaptive"},
-            betas=[self.FALLBACK_BETA],
-            fallbacks="default",
+            **kw,
         )
         u = resp.usage
         cache_read = getattr(u, "cache_read_input_tokens", 0) or 0
@@ -191,8 +194,7 @@ class MockAnalyzer:
                    "disable_access_key": d.get("principal") or target_user}[a]
             if tgt:
                 recs.append(RecommendedAction(action=a, target=tgt, reason=f"{alert.rule} playbook"))
-        facts = ", ".join(f"{k}={v}" for k, v in list(d.items())[:4])
-        return Analysis(explanation=f"{alert.title}. {facts}.", mitre_attack=tech, risk_score=min(100, risk),
+        return Analysis(explanation=f"{alert.title}.", mitre_attack=tech, risk_score=min(100, risk),
                         severity=sev, false_positive_likelihood=fp, recommended_actions=recs, citations=cites)
 
     def _anomaly(self, alert: Alert, cites: list[str]) -> Analysis:
@@ -226,12 +228,14 @@ class MockAnalyzer:
         seen, actions = set(), []
         for p in parts:
             for a in p.recommended_actions:
+                if a.action == "create_ticket":
+                    a = RecommendedAction(action="create_ticket", target=inc.id, reason="one ticket for the incident")
                 if (a.action, a.target) not in seen:
                     seen.add((a.action, a.target))
                     actions.append(a)
         return Analysis(
             explanation=f"{stages}-stage chain on {inc.detail.get('focus')}: "
-                        + " Then ".join(p.explanation for p in parts),
+                        + "; then ".join(m.title for m in inc.members) + ".",
             mitre_attack=", ".join(inc.mitre),
             risk_score=risk,
             severity=self.SEV[min(3, max(self.SEV.index(p.severity) for p in parts) + (1 if stages >= 3 else 0))],
@@ -316,7 +320,79 @@ class MockAnalyzer:
             false_positive_likelihood="low", recommended_actions=actions, citations=cites)
 
 
-def get_analyzer() -> Analyzer:
-    if settings.llm_provider == "anthropic":
-        return AnthropicAnalyzer()
+class OpenAICompatibleAnalyzer:
+    """Any endpoint speaking the OpenAI chat-completions protocol with JSON-schema output:
+    OpenAI itself, or a local model behind vLLM or Ollama. Same prompt, same schema, same
+    guardrails downstream. WARDEN_LLM=openai, WARDEN_LLM_BASE_URL, WARDEN_LLM_API_KEY."""
+
+    def __init__(self, model: str | None = None, base_url: str | None = None, api_key: str | None = None, transport=None):
+        import httpx
+        self.model = model or settings.model
+        headers = {"Authorization": f"Bearer {api_key or settings.llm_api_key}"} if (api_key or settings.llm_api_key) else {}
+        self.http = httpx.Client(base_url=(base_url or settings.llm_base_url or "https://api.openai.com/v1").rstrip("/"),
+                                 headers=headers, timeout=httpx.Timeout(180.0, connect=10.0), transport=transport)
+        self.last_usage: dict = {}
+
+    def analyze(self, alert: Alert, docs: list[dict], context: dict | None = None) -> Analysis:
+        user = USER_TEMPLATE.format(alert_json=_alert_json(alert), context=_format_context(docs), track_record=_track(context))
+        r = self.http.post("/chat/completions", json={
+            "model": self.model,
+            "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}],
+            "response_format": {"type": "json_schema",
+                                "json_schema": {"name": "analysis", "schema": Analysis.model_json_schema(), "strict": False}},
+        })
+        if r.status_code >= 400:
+            raise RuntimeError(f"{self.model}: HTTP {r.status_code} {r.text[:200]}")
+        body = r.json()
+        u = body.get("usage") or {}
+        self.last_usage = {"model": body.get("model", self.model), "input_tokens": u.get("prompt_tokens"),
+                           "output_tokens": u.get("completion_tokens"), "cost_usd": None}
+        return Analysis.model_validate_json(body["choices"][0]["message"]["content"])
+
+
+class RoutingAnalyzer:
+    """Model per stage: incidents, crown-jewel assets, anomalies, and anything touching
+    credentials or ransomware get the strong model; routine single alerts go to the
+    cheaper triage model. Both share the prompt, schema, and guardrails."""
+
+    STRONG_RULES = {"credential_dumping", "ransomware_precursor", "mass_file_encryption", "mfa_method_change",
+                    "session_anomaly", "account_create_then_privilege", "cloud_logging_disabled"}
+
+    def __init__(self, strong: Analyzer, triage: Analyzer):
+        self.strong, self.triage = strong, triage
+        self.last_usage: dict = {}
+        self.model = getattr(strong, "model", "")
+
+    def pick(self, alert: Alert) -> Analyzer:
+        heavy = (alert.is_incident or alert.asset_tier == "crown_jewel" or alert.rule.startswith("anomaly.")
+                 or alert.rule in self.STRONG_RULES)
+        return self.strong if heavy else self.triage
+
+    def analyze(self, alert: Alert, docs: list[dict], context: dict | None = None) -> Analysis:
+        a = self.pick(alert)
+        out = a.analyze(alert, docs, context)
+        self.last_usage = {**(getattr(a, "last_usage", {}) or {}), "stage": "incident" if a is self.strong else "triage"}
+        self.model = getattr(a, "model", "")
+        return out
+
+
+def get_analyzer(tenant: str | None = None) -> Analyzer:
+    """Provider and models come from the tenant's policy.json "llm" block, else settings."""
+    import json as _json
+
+    from .tenancy import tenant_dir
+    cfg = {}
+    pf = tenant_dir(tenant or settings.tenant) / "policy.json"
+    if pf.exists():
+        cfg = _json.loads(pf.read_text()).get("llm", {})
+    provider = cfg.get("provider", settings.llm_provider)
+    strong, triage = cfg.get("model", settings.model), cfg.get("model_triage", settings.model_triage)
+    if provider == "anthropic":
+        if strong == triage:
+            return AnthropicAnalyzer(strong)
+        return RoutingAnalyzer(AnthropicAnalyzer(strong), AnthropicAnalyzer(triage))
+    if provider == "openai":
+        base = cfg.get("base_url", settings.llm_base_url)
+        return RoutingAnalyzer(OpenAICompatibleAnalyzer(strong, base), OpenAICompatibleAnalyzer(triage, base)) \
+            if strong != triage else OpenAICompatibleAnalyzer(strong, base)
     return MockAnalyzer()

@@ -112,4 +112,5 @@ class Case(BaseModel):
     prompt_version: str = ""
     kb_snapshot: str = ""
     verification: list[str] = Field(default_factory=list)   # problems found checking the analysis
+    spans: list[dict] = Field(default_factory=list)          # timed pipeline stages for this case (trace)
     model: str = ""
