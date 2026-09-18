@@ -1,6 +1,16 @@
 {
   "name": "real: machine-account lookalike created",
-  "description": "EVTX-ATTACK-SAMPLES DE_Fake_ComputerAccount_4720. An account literally named '$' is created twice by the DC's machine account. Suspicious (T1136), but no current rule covers a lone account creation, so nothing fires. Recorded as a known gap for Phase 6 detection proposals.",
+  "description": "EVTX-ATTACK-SAMPLES DE_Fake_ComputerAccount_4720. An account literally named '$' is created twice by the DC's machine account. Previously a known gap; caught by machine_account_creates_account, which Claude proposed from this recording.",
   "events": "../../real/DE_Fake_ComputerAccount_4720.evtx",
-  "alerts": []
+  "alerts": [
+    {
+      "rule": "machine_account_creates_account",
+      "match": {},
+      "label": "true_positive",
+      "expect_actions": {
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
 }
