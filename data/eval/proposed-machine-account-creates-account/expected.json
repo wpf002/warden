@@ -1,0 +1,14 @@
+{
+  "name": "proposed: machine_account_creates_account",
+  "description": "Positive: the computer account machine-01$ creates two domain accounts on host-01 within 54 seconds; near-misses: the svc-domainjoin service account bulk-creating two workstation objects, a single isolated creation by machine-07$, and machine-09$ rotating its own password.",
+  "alerts": [
+    {
+      "rule": "machine_account_creates_account",
+      "label": "true_positive",
+      "match": {
+        "user": "machine-01$",
+        "host": "host-01"
+      }
+    }
+  ]
+}

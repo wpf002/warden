@@ -1,0 +1,6 @@
+{"kind": "identity", "ts": "2020-09-16T09:31:19.133272Z", "source": "windows", "host": "host-01", "user": "machine-01$", "asset_tier": "unknown", "change_type": "account_created", "target_user": "$"}
+{"kind": "identity", "ts": "2020-09-16T09:32:13.647154Z", "source": "windows", "host": "host-01", "user": "machine-01$", "asset_tier": "unknown", "change_type": "account_created", "target_user": "$"}
+{"kind": "identity", "ts": "2020-09-16T10:05:00Z", "source": "windows", "host": "host-02", "user": "svc-domainjoin", "asset_tier": "standard", "change_type": "account_created", "target_user": "wks-4411$"}
+{"kind": "identity", "ts": "2020-09-16T10:06:30Z", "source": "windows", "host": "host-02", "user": "svc-domainjoin", "asset_tier": "standard", "change_type": "account_created", "target_user": "wks-4412$"}
+{"kind": "identity", "ts": "2020-09-16T10:40:00Z", "source": "windows", "host": "host-04", "user": "machine-07$", "asset_tier": "unknown", "change_type": "account_created", "target_user": "wks-9001$"}
+{"kind": "identity", "ts": "2020-09-16T11:00:00Z", "source": "windows", "host": "host-03", "user": "machine-09$", "asset_tier": "unknown", "change_type": "password_reset", "target_user": "machine-09$"}
