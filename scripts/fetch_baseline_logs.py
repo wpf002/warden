@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "real" / "baseline"
 URL = "https://zenodo.org/records/8196385/files/SSH.tar.gz?download=1"
-SHA256 = ""  # pinned after the first verified fetch
+SHA256 = "296610a35773f58b7c295e5407fc5ccdf48beb3c544fc14a6309addf904a2712"
 
 
 def main() -> int:

@@ -67,15 +67,20 @@ class CaseStore:
                      doc=json.loads(e.model_dump_json(exclude={"raw"}))) for e in evs]
         if not rows:
             return 0
+        seen: set[str] = set()
+        rows = [r for r in rows if not (r["dedupe"] in seen or seen.add(r["dedupe"]))]
+        added = 0
+        # Postgres caps a statement at 65535 bind parameters: check and insert in chunks.
         with self.engine.begin() as c:
-            have = {r[0] for r in c.execute(select(db.events.c.dedupe).where(
-                db.events.c.tenant == self.tenant, db.events.c.dedupe.in_([r["dedupe"] for r in rows])))}
-            new = [r for r in rows if r["dedupe"] not in have]
-            seen: set[str] = set()
-            new = [r for r in new if not (r["dedupe"] in seen or seen.add(r["dedupe"]))]
-            if new:
-                c.execute(insert(db.events), new)
-        return len(new)
+            for i in range(0, len(rows), 5000):
+                chunk = rows[i:i + 5000]
+                have = {r[0] for r in c.execute(select(db.events.c.dedupe).where(
+                    db.events.c.tenant == self.tenant, db.events.c.dedupe.in_([r["dedupe"] for r in chunk])))}
+                new = [r for r in chunk if r["dedupe"] not in have]
+                for j in range(0, len(new), 500):
+                    c.execute(insert(db.events), new[j:j + 500])
+                added += len(new)
+        return added
 
     def events(self, since=None, until=None, kind: str | None = None, user: str | None = None):
         from .events import parse_event
