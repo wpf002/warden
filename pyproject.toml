@@ -1,8 +1,9 @@
 [project]
 name = "warden"
-version = "0.1.0"
+version = "0.7.0"
 description = "AI-powered SOC pipeline: detection -> RAG -> LLM -> guardrails -> actions"
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
