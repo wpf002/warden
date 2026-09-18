@@ -1,0 +1,38 @@
+{
+  "name": "3am AD reconnaissance that no rule names",
+  "description": "30 days of routine history, then dkim touches nine servers at 03:00 and runs nltest, adfind, net group, dsquery for the first time. Only the baselines can see it.",
+  "alerts": [
+    {
+      "rule": "anomaly.user",
+      "match": {
+        "user": "dkim"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "anomaly.host",
+      "match": {
+        "host": "ws-dkim"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "anomaly.user",
+        "anomaly.host"
+      ],
+      "label": "true_positive",
+      "risk_min": 70,
+      "expect_actions": {
+        "lock_user": "approve",
+        "isolate_host": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "anomaly-sourced: every containment action waits for an analyst"
+    }
+  ],
+  "history": "history.jsonl"
+}

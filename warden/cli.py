@@ -114,6 +114,10 @@ def cmd_refresh(a):
     if not a.skip_intel:
         report["intel"] = intel.refresh(kb=kb)
     report["snapshot"] = kb.record_snapshot()
+    if not a.skip_baselines:
+        from . import baselines
+        from .store import CaseStore
+        report["baselines"] = baselines.rebuild(CaseStore())
     print(_json.dumps(report, indent=2, default=str))
     sources = [report.get("attack", {})] + list(report.get("intel", {}).values())
     if sources and all("error" in x for x in sources if x):
@@ -144,6 +148,33 @@ def cmd_replay(a):
     print(f"replay {c.alert.id}  kb {c.kb_snapshot}  prompt {c.prompt_version}  model {c.model}")
     for name, o, n in rows:
         print(f"  {'=' if o == n else '!'} {name:14} {o}  ->  {n}")
+
+
+def cmd_baseline(a):
+    from . import baselines
+    from .store import CaseStore
+    store = CaseStore()
+    if a.action == "rebuild":
+        n = baselines.rebuild(store, a.days)
+        print(f"rebuilt {n} profiles from the last {a.days or settings.baseline_days} days of events")
+        return
+    profiles = baselines.load_profiles(store)
+    if a.entity:
+        p = profiles.get((a.type, a.entity))
+        if not p:
+            raise SystemExit(f"no {a.type} profile for {a.entity}")
+        print(f"{a.type} {a.entity}: {p.days} days")
+        for n, vals in p.numeric.items():
+            if vals:
+                print(f"  {n:22} mean {sum(vals) / len(vals):8.1f}  last {vals[-1]:g}")
+        for f, seen in p.seen.items():
+            print(f"  {f:22} {len(seen)} known: {', '.join(sorted(seen, key=lambda v: -seen[v])[:8])}")
+        return
+    by = {}
+    for (t, _), p in profiles.items():
+        by.setdefault(t, []).append(p.days)
+    for t, days in sorted(by.items()):
+        print(f"{t:5} {len(days):5} profiles, median {sorted(days)[len(days) // 2]} days of history")
 
 
 def cmd_serve(a):
@@ -194,11 +225,19 @@ def main(argv=None):
     rf = sub.add_parser("refresh", help="nightly: ATT&CK + intel feeds + KB sync + snapshot")
     rf.add_argument("--skip-attack", action="store_true")
     rf.add_argument("--skip-intel", action="store_true")
+    rf.add_argument("--skip-baselines", action="store_true")
     rf.set_defaults(fn=cmd_refresh)
 
     rp = sub.add_parser("replay", help="re-run a case's analysis on its recorded inputs and diff")
     rp.add_argument("case_id")
     rp.set_defaults(fn=cmd_replay)
+
+    bl = sub.add_parser("baseline", help="behavioral baselines: rebuild (nightly) or show")
+    bl.add_argument("action", choices=["rebuild", "show"])
+    bl.add_argument("--days", type=int, default=None)
+    bl.add_argument("--type", choices=["user", "host"], default="user")
+    bl.add_argument("--entity", default=None)
+    bl.set_defaults(fn=cmd_baseline)
 
     hp = sub.add_parser("hash-password", help="hash a password for WARDEN_USERS")
     hp.add_argument("--password", default=None, help="omit to be prompted")

@@ -1,0 +1,6 @@
+{
+  "name": "an ordinary day measured against 30 days of baselines",
+  "description": "Nothing departs from the baselines; any anomaly alert is a false positive.",
+  "alerts": [],
+  "history": "history.jsonl"
+}

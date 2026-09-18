@@ -61,8 +61,21 @@ def record_verdict(case: Case, verdict: str, note: str, store: CaseStore, kb: Kn
     case.analyst_verdict = verdict  # type: ignore[assignment]
     case.analyst_note = note
     case.analyst_reason = reason if verdict == "false_positive" else ""
+    if verdict == "false_positive":
+        from .baselines import absorb
+        n = absorb(store, case.alert)
+        if n:
+            case.guardrail_log.append(f"BASELINE absorbed {n} value(s) the analyst called normal")
     if suppress and verdict == "false_positive":
         for m in (case.alert.members or [case.alert]):
+            if m.detail.get("source") == "anomaly":
+                for c in m.detail.get("contributions", [])[:2]:
+                    if c["kind"] == "iforest":
+                        continue
+                    ex = store.add_exclusion(m.rule, f"feature:{c['feature']}", m.detail["entity"], reason or "other",
+                                             note, actor)
+                    case.guardrail_log.append(f"EXCLUSION #{ex} {m.rule} mutes {c['feature']} for {m.detail['entity']}")
+                continue
             field, values = ("user", m.users) if 0 < len(m.users) <= 3 else ("source_ip", [m.source_ip])
             for v in filter(None, values):
                 ex = store.add_exclusion(m.rule, field, v, reason or "other", note, actor)

@@ -52,7 +52,8 @@ def test_registry_populated_and_consistent():
     reg = load_all()
     assert {"brute_force", "password_spray", "impossible_travel", "mfa_fatigue"} <= set(reg)
     for det in reg.values():
-        assert det.id and det.mitre and det.playbook and det.event_kinds
+        # anomaly rules carry no technique of their own; the model maps each one to ATT&CK
+        assert det.id and det.playbook and det.event_kinds and (det.mitre or det.id.startswith("anomaly."))
 
 
 def test_registry_rejects_duplicate_ids():

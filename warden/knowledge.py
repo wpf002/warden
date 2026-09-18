@@ -276,6 +276,11 @@ class KnowledgeBase:
         n_attack = 1 if alert.mitre and k >= 3 else 0
         n_cases = 1 if k >= 4 else 0
         out: list[dict] = self.retrieve_by_technique(ops_q, alert.mitre, k=n_attack, kind="attack") if n_attack else []
+        anomalies = [m for m in (alert.members or [alert]) if m.rule.startswith("anomaly.")]
+        if anomalies and k >= 3:
+            # no technique to filter on: search ATT&CK by what deviated
+            why = " ".join(c["why"] for m in anomalies for c in m.detail.get("contributions", [])[:4])
+            out += [d for d in self.retrieve(why, 2, where={"kind": "attack"}) if d["id"] not in {x["id"] for x in out}]
         seen = {d["id"] for d in out}
 
         def take(docs: list[dict], limit: int) -> None:

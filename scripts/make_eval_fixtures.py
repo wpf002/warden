@@ -626,6 +626,81 @@ def case_benign_endpoint_and_cloud():
     })
 
 
+# ---------------------------------------------------------------- Phase 5: baselines
+STAFF = ["dkim", "rkhan", "pwong", "jlee", "tnguyen", "asmith", "mgarcia", "cwu", "efox", "gpatel", "hmori", "lbaker"]
+USUAL_PROCS = ["outlook.exe", "chrome.exe", "teams.exe", "excel.exe", "winword.exe", "onedrive.exe"]
+
+
+def routine_day(day0, rng, users=STAFF, skip=()):
+    """One ordinary working day: each person on their own workstation plus one or two shared
+    servers, office hours, usual apps, usual SaaS destinations."""
+    out = []
+    for i, u in enumerate(users):
+        if u in skip:
+            continue
+        ws, ip = f"ws-{u}", f"10.0.5.{10 + i}"
+        for _ in range(rng.randint(3, 6)):
+            t = day0 + timedelta(hours=rng.randint(8, 17), minutes=rng.randint(0, 59))
+            out.append(auth(t, source="windows", event_type="login_success", user=u, source_ip=ip,
+                            host=rng.choice([ws, ws, "fileserver-01", "wiki-01" if i % 2 else "jira-01"]),
+                            logon_type="network", geo="internal"))
+        for _ in range(rng.randint(6, 10)):
+            t = day0 + timedelta(hours=rng.randint(8, 17), minutes=rng.randint(0, 59))
+            name = rng.choice(USUAL_PROCS)
+            out.append(proc(t, action="start", host=ws, user=u, parent_name="explorer.exe", process_name=name,
+                            command_line=name, pid=rng.randint(1000, 9000)))
+            out.append(net(t, host=ws, source_ip=ip, dest_ip=rng.choice(["52.96.0.10", "142.250.80.46", "13.107.4.50"]),
+                           dest_port=443, protocol="tcp", bytes_out=rng.randint(2000, 90000)))
+    return out
+
+
+def case_planted_unknown():
+    rng = random.Random(41)
+    today = T0.replace(hour=0)
+    history = []
+    for d in range(30, 0, -1):
+        history += routine_day(today - timedelta(days=d), rng)
+    evs = routine_day(today, rng, skip={"dkim"})
+    # dkim, 03:00-03:40 UTC: nine servers, discovery tools never run before. No rule covers this.
+    ip, ws = "10.0.5.10", "ws-dkim"
+    for n, h in enumerate(["dc-01", "dc-02", "sql-01", "sql-02", "backup-01", "hr-app-01", "fin-db-01", "vcenter-01", "ca-01"]):
+        evs.append(auth(today + timedelta(hours=3, minutes=n * 4), source="windows", event_type="login_success", user="dkim",
+                        source_ip=ip, host=h, logon_type="network", geo="internal"))
+    for n, (name, cmd) in enumerate([("nltest.exe", "nltest /dclist:corp"), ("adfind.exe", "adfind -f objectcategory=computer"),
+                                     ("net.exe", 'net group "domain admins" /domain'), ("dsquery.exe", "dsquery * -limit 0"),
+                                     ("adfind.exe", "adfind -sc trustdmp")]):
+        evs.append(proc(today + timedelta(hours=3, minutes=1 + n * 6), action="start", host=ws, user="dkim",
+                        parent_name="cmd.exe", process_name=name, command_line=cmd, pid=6000 + n))
+    # a benign novelty that must stay under the threshold: rkhan opens jira once
+    evs.append(auth(today + timedelta(hours=11), source="windows", event_type="login_success", user="rkhan",
+                    source_ip="10.0.5.11", host="jira-01", logon_type="network", geo="internal"))
+    write("29-planted-unknown-recon", evs, {
+        "name": "3am AD reconnaissance that no rule names",
+        "description": "30 days of routine history, then dkim touches nine servers at 03:00 and runs nltest, adfind, "
+                       "net group, dsquery for the first time. Only the baselines can see it.",
+        "alerts": [
+            {"rule": "anomaly.user", "match": {"user": "dkim"}, "label": "true_positive"},
+            {"rule": "anomaly.host", "match": {"host": "ws-dkim"}, "label": "true_positive"},
+        ],
+        "incidents": [{"rules": ["anomaly.user", "anomaly.host"], "label": "true_positive", "risk_min": 70,
+                       "expect_actions": {"lock_user": "approve", "isolate_host": "approve", **TICKET},
+                       "note": "anomaly-sourced: every containment action waits for an analyst"}],
+    }, history=history)
+
+
+def case_routine_day():
+    rng = random.Random(42)
+    today = T0.replace(hour=0)
+    history = []
+    for d in range(30, 0, -1):
+        history += routine_day(today - timedelta(days=d), rng)
+    write("30-routine-day-with-baselines", routine_day(today, rng), {
+        "name": "an ordinary day measured against 30 days of baselines",
+        "description": "Nothing departs from the baselines; any anomaly alert is a false positive.",
+        "alerts": [],
+    }, history=history)
+
+
 if __name__ == "__main__":
     if EVAL.exists():
         shutil.rmtree(EVAL)
@@ -635,6 +710,7 @@ if __name__ == "__main__":
                case_service_account_rdp, case_create_then_privilege, case_session_replay, case_reset_abuse,
                case_lockout_storm, case_single_reset, case_phish_chain, case_ransomware, case_cred_dump_and_cleanup,
                case_lolbin_persistence_tamper, case_dns_tunnel, case_internal_scan, case_exfil, case_ioc,
-               case_cloud_takeover, case_public_bucket_and_forwarding, case_benign_endpoint_and_cloud]:
+               case_cloud_takeover, case_public_bucket_and_forwarding, case_benign_endpoint_and_cloud,
+               case_planted_unknown, case_routine_day]:
         fn()
     print(f"\nfixtures written to {EVAL}")

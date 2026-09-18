@@ -127,6 +127,18 @@ exclusions = Table(
 )
 
 
+baselines = Table(
+    "baselines", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("tenant", String(64), nullable=False, default="default", index=True),
+    Column("entity_type", String(16), index=True),
+    Column("entity", String(256), index=True),
+    Column("days", Integer),
+    Column("profile", JSON),
+    Column("updated", DateTime(timezone=True)),
+)
+
+
 def _url() -> str:
     if settings.database_url:
         return settings.database_url

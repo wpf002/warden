@@ -81,6 +81,26 @@ class MyRule(Detection):
     def run(self, events): ...   # -> list[Alert], deterministic
 ```
 
+## Behavioral baselines
+
+`anomaly.user` and `anomaly.host` catch what no rule names. Each user and host gets a
+30-day profile (`warden baseline rebuild`, part of `warden refresh`): daily counts with
+their spread, and every host, network, country, login hour, process, parent->child pair,
+and destination it has used. A day is scored as a list of explicit contributions, e.g.
+"distinct hosts 9, baseline 2.5 +/- 0.6 (z=6.5)" or "first processes: adfind.exe,
+nltest.exe". Values the entity has never used but several peers use weigh a quarter as
+much. Isolation Forest is a second opinion that adds weight but never fires alone.
+
+Anomaly alerts are approval-only: no action auto-executes on anomaly evidence alone.
+An analyst's false positive teaches the baseline (the flagged values become known);
+"mute" also silences the top features for that entity for 30 days. Attack days are kept
+out of the baseline when profiles update.
+
+`scripts/soak_anomaly.py` runs a simulated two-week soak (40 people, scripted project
+moves, a rollout, a recurring maintenance night, two planted recon runs): FPs 13 in week
+one, 11 in week two, both recon runs caught. It is a simulation; real FP rates need real
+logs and at least 7 days of history per entity.
+
 ## Response connectors
 
 `warden/connectors/`, mapped per action with `WARDEN_CONNECTORS`

@@ -195,6 +195,26 @@ class MockAnalyzer:
         return Analysis(explanation=f"{alert.title}. {facts}.", mitre_attack=tech, risk_score=min(100, risk),
                         severity=sev, false_positive_likelihood=fp, recommended_actions=recs, citations=cites)
 
+    def _anomaly(self, alert: Alert, cites: list[str]) -> Analysis:
+        d = alert.detail
+        feats = {c["feature"] for c in d.get("contributions", [])}
+        score = d.get("score", 0)
+        recon = "processes_set" in feats and ("hosts" in feats or "distinct_hosts" in feats)
+        tech = ("T1087 Account Discovery / T1018 Remote System Discovery" if recon else
+                "T1078 Valid Accounts" if feats & {"geos", "src_nets", "hours"} else "no clear technique")
+        risk = min(90, int(35 + 3 * score))
+        acts = [RecommendedAction(action="create_ticket", target=alert.id, reason="investigate the deviation"),
+                RecommendedAction(action="notify", target="soc", reason="anomaly review")]
+        if d.get("entity_type") == "user" and risk >= 70:
+            acts.insert(0, RecommendedAction(action="lock_user", target=d["entity"], reason="deviation consistent with misuse"))
+        if d.get("entity_type") == "host" and risk >= 70:
+            acts.insert(0, RecommendedAction(action="isolate_host", target=d["entity"], reason="deviation consistent with compromise"))
+        why = "; ".join(c["why"] for c in d.get("contributions", [])[:4])
+        return Analysis(explanation=f"No rule fired; {d.get('entity_type')} {d.get('entity')} departed from its "
+                                    f"{d.get('baseline_days')}-day baseline: {why}. Closest technique: {tech}.",
+                        mitre_attack=tech, risk_score=risk, severity="high" if risk >= 70 else "medium",
+                        false_positive_likelihood="medium", recommended_actions=acts, citations=cites)
+
     SEV = ["low", "medium", "high", "critical"]
     FPL = ["low", "medium", "high"]
 
@@ -231,6 +251,8 @@ class MockAnalyzer:
                 recommended_actions=[RecommendedAction(action="create_ticket", target=alert.source_ip, reason="platform team to fix credential"),
                                      RecommendedAction(action="notify", target="soc", reason="FYI")],
                 citations=cites)
+        if alert.rule.startswith("anomaly."):
+            return self._anomaly(alert, cites)
         if alert.rule in self.TABLE:
             return self._from_table(alert, cites)
         if alert.rule == "impossible_travel":

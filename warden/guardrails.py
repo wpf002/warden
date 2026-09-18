@@ -20,6 +20,20 @@ def _automatable(action: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _is_anomaly(a: Alert) -> bool:
+    return a.rule.startswith("anomaly.")
+
+
+def _rule_evidenced(alert: Alert, action: RecommendedAction) -> bool:
+    """True when a deterministic rule (not a statistical anomaly) names the action's target.
+    ROADMAP Phase 5: anomaly-sourced alerts never auto-execute."""
+    members = [m for m in (alert.members or [alert]) if not _is_anomaly(m)]
+    if not members:
+        return False
+    t = action.target
+    return any(t in m.all_ips() or t in m.users or t in m.hosts or t in _principals(m) for m in members)
+
+
 def _host_tier(alert: Alert, host: str) -> str:
     """Tier of the host being isolated, not of the incident: an incident is crown-jewel if
     any step touched the DC, but isolating the phished laptop is still routine."""
@@ -72,6 +86,9 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0) -> list[Decision]:
             continue
         if a.action in settings.human_approval_actions:
             out.append(Decision(a, "approve", "requires analyst approval (SEC-012 §2)"))
+            continue
+        if a.action not in LOW_IMPACT and not _rule_evidenced(alert, a):
+            out.append(Decision(a, "approve", "only an anomaly supports this target; anomaly-sourced actions need an analyst"))
             continue
         ok, why_not = _automatable(a.action)
         if not ok:
