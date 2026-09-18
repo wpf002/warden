@@ -15,14 +15,33 @@ through guardrails** that are policy in code, versioned with the repo.
 
 ```bash
 git clone git@github.com:wpf002/warden.git && cd warden
-chmod +x bootstrap.sh && ./bootstrap.sh      # needs Python 3.10+
-source .venv/bin/activate
-# put ANTHROPIC_API_KEY in .env, or set WARDEN_LLM=mock to run without one
-python -m warden.cli run
-python -m warden.cli serve   # http://127.0.0.1:8000
+cp .env.example .env                 # ANTHROPIC_API_KEY (+ ANTHROPIC_WORKSPACE_ID if the key isn't workspace-scoped)
+docker compose up -d --build         # API + console + Postgres + nightly scheduler
+open http://localhost:8000
+docker compose exec warden warden demo   # sample cases for the console
 ```
 
-Fully offline: `WARDEN_LLM=mock WARDEN_EMBEDDINGS=hash`.
+Without Docker: `./bootstrap.sh`, then `python -m warden.cli serve`, and `cd web && npm ci && npm run build`
+for the console. Offline: `WARDEN_LLM=mock WARDEN_EMBEDDINGS=hash`.
+
+## Console
+
+The web console at `/` (React, served by the API) covers the case queue, case pages
+with response approvals and rollback, detections health, the knowledge base, detection
+proposals, evaluation history, the audit log, and response connectors. Keyboard: `j`/`k`
+move, `Enter` opens, `/` searches, `Esc` returns to the queue. The original
+server-rendered pages remain at `/classic`.
+
+## Deploy
+
+| Target | Where |
+|---|---|
+| Docker Compose | `docker-compose.yml` (Postgres, scheduler, optional Mailpit sandbox) |
+| Kubernetes | `deploy/helm/warden` (Deployment, CronJobs for refresh and detection, PVC, Ingress; secrets referenced, never templated) |
+| AWS | `deploy/terraform/aws` (ECS Fargate, ALB with optional OIDC, RDS Postgres, EFS, Secrets Manager, CloudWatch, EventBridge Scheduler) |
+
+The Helm chart is linted and rendered, and the Terraform validates, both in CI.
+Neither has been applied to a live cluster or account.
 
 ## Ingest
 
@@ -80,6 +99,21 @@ class MyRule(Detection):
 
     def run(self, events): ...   # -> list[Alert], deterministic
 ```
+
+## Platform
+
+- **Tenancy**: every event, case, audit row, model call, exclusion, and baseline carries a
+  tenant; `data/tenants/<t>/policy.json` overrides guardrails, models, and connectors;
+  `data/tenants/<t>/knowledge/` layers playbooks over the global ones.
+- **Models**: incidents, crown-jewel assets, anomalies, and credential/ransomware rules go
+  to `WARDEN_MODEL` (claude-opus-5); routine alerts to `WARDEN_MODEL_TRIAGE`
+  (claude-sonnet-5). `WARDEN_LLM=openai` with `WARDEN_LLM_BASE_URL` points at OpenAI or a
+  local vLLM/Ollama. Prompts are versioned files in `warden/prompts/`.
+- **Governance**: PII redaction at ingest (`WARDEN_REDACT`), per-tenant retention, every
+  analysis checked against its evidence (optionally by a second model,
+  `WARDEN_VERIFY_MODEL`), and a red-team suite in CI.
+- **Observability**: JSON logs with trace ids, Prometheus metrics at `/metrics`, per-case
+  stage timings, `/healthz`.
 
 ## Behavioral baselines
 

@@ -1,0 +1,45 @@
+# Local Warden: API + console, Postgres, and the nightly scheduler.
+#   cp .env.example .env   # add ANTHROPIC_API_KEY (and ANTHROPIC_WORKSPACE_ID if needed)
+#   docker compose up -d --build
+#   open http://localhost:8000
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: warden
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warden-local}
+      POSTGRES_DB: warden
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warden -d warden"]
+      interval: 5s
+      retries: 20
+
+  warden:
+    build: .
+    image: warden:local
+    env_file: [.env]
+    environment: &env
+      WARDEN_DATABASE_URL: postgresql+psycopg://warden:${POSTGRES_PASSWORD:-warden-local}@db:5432/warden
+      WARDEN_DATA_DIR: /data
+      WARDEN_ALLOW_NOAUTH: ${WARDEN_ALLOW_NOAUTH:-1}   # local only: WARDEN_AUTH=none from the host network
+    ports: ["127.0.0.1:${WARDEN_PORT:-8000}:8000"]
+    volumes: [wardendata:/data]
+    depends_on: { db: { condition: service_healthy } }
+
+  scheduler:
+    image: warden:local
+    command: ["scheduler"]
+    env_file: [.env]
+    environment: *env
+    volumes: [wardendata:/data]
+    depends_on: { db: { condition: service_healthy }, warden: { condition: service_started } }
+
+  mailpit:
+    profiles: [sandbox]
+    image: axllent/mailpit:latest
+    ports: ["127.0.0.1:1025:1025", "127.0.0.1:8025:8025"]
+
+volumes:
+  pgdata:
+  wardendata:

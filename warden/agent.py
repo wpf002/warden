@@ -41,9 +41,11 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore, stats: 
             track = [stats[r].as_prior() for r in dict.fromkeys(c.alert.rules()) if r in stats]
             with obs.span("analyze", case=c.alert.id):
                 c.analysis = analyzer.analyze(c.alert, c.retrieved_docs, {"track_record": track})
-        except Exception as e:  # noqa: BLE001 - logged, then re-raised
+        except Exception as e:  # noqa: BLE001 - one failed call must not stop the run
             err = f"{type(e).__name__}: {e}"
-            raise
+            c.analysis = None
+            c.guardrail_log.append(f"ANALYSIS FAILED {err[:300]}; case kept for an analyst, no actions taken")
+            obs.log.warning("analysis failed", extra={"fields": {"case": c.alert.id, "error": err[:300]}})
         finally:
             u = getattr(analyzer, "last_usage", {}) or {}
             c.model = u.get("model") or getattr(analyzer, "model", "")
@@ -64,6 +66,9 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore, stats: 
 
     def guardrail(state: State) -> State:
         c = state["case"]
+        if c.analysis is None:          # nothing to act on; a person picks it up from the queue
+            c.status = "open"
+            return {"case": c}
         from .stats import threshold_bump
         bump = max((threshold_bump(stats.get(r)) for r in c.alert.rules()), default=0)
         from .governance import verify, verify_with_model

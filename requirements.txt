@@ -6,6 +6,9 @@ uvicorn>=0.29
 python-multipart>=0.0.9   # fastapi Form() in the dashboard verdict route
 pydantic>=2.0
 sqlalchemy>=2.0
+psycopg[binary]>=3.2    # Postgres driver (WARDEN_DATABASE_URL=postgresql+psycopg://...)
+prometheus-client>=0.20
+scikit-learn>=1.4       # Isolation Forest second opinion (optional at runtime)
 python-evtx>=0.8          # reads Windows .evtx directly
 httpx>=0.27               # response connectors
 boto3>=1.34               # AWS response connectors

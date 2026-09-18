@@ -13,3 +13,5 @@ web/node_modules/
 web/dist/
 web/*.tsbuildinfo
 .claude/
+deploy/terraform/**/.terraform/
+*.tfstate*

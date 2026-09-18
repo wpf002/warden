@@ -1,0 +1,55 @@
+image:
+  repository: ghcr.io/wpf002/warden
+  tag: "0.7.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1          # SQLite needs 1; with Postgres (database.url) the API scales horizontally
+
+# Non-secret settings, passed as environment variables.
+config:
+  WARDEN_LLM: anthropic
+  WARDEN_MODEL: claude-opus-5
+  WARDEN_MODEL_TRIAGE: claude-sonnet-5
+  WARDEN_AUTH: proxy                     # OIDC terminated by the ingress (oauth2-proxy, ALB, ...)
+  WARDEN_TRUSTED_PROXIES: 10.0.0.0/8
+  WARDEN_PROXY_USER_HEADER: x-forwarded-user
+  WARDEN_PROXY_GROUPS_HEADER: x-forwarded-groups
+  WARDEN_LOG_FORMAT: json
+  WARDEN_LIVE_ACTIONS: "0"
+  WARDEN_REDACT: email,card,ssn
+
+# Secrets are referenced, never templated from values. Create them with your secret manager
+# (External Secrets, Sealed Secrets, CSI driver). Keys become environment variables.
+existingSecret: warden-secrets           # ANTHROPIC_API_KEY, WARDEN_DATABASE_URL, WARDEN_HEC_TOKENS, ...
+
+persistence:
+  enabled: true
+  size: 20Gi                             # knowledge base, Chroma index, ATT&CK docs
+  storageClass: ""
+  accessMode: ReadWriteOnce
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: warden.example.com
+  tls: []
+
+refresh:
+  enabled: true
+  schedule: "15 3 * * *"                 # ATT&CK, intel, KB sync, baselines, retention
+  detectSchedule: "*/15 * * * *"         # detection over events pushed to HEC
+
+resources:
+  requests: { cpu: 250m, memory: 1Gi }
+  limits: { memory: 3Gi }
+
+podSecurityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001 }
+securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: false, capabilities: { drop: [ALL] } }
+nodeSelector: {}
+tolerations: []
+affinity: {}

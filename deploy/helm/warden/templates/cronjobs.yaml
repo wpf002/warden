@@ -1,0 +1,32 @@
+{{- if .Values.refresh.enabled }}
+{{- range $name, $spec := dict "refresh" (list .Values.refresh.schedule (list "refresh")) "detect" (list .Values.refresh.detectSchedule (list "run" "--from-db" "--since" "25h")) }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "warden.fullname" $ }}-{{ $name }}
+  labels: {{- include "warden.labels" $ | nindent 4 }}
+spec:
+  schedule: {{ index $spec 0 | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels: {{- include "warden.selector" $ | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          securityContext: {{- toYaml $.Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: {{ $name }}
+              image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+              args: {{ toJson (index $spec 1) }}
+              {{- include "warden.env" $ | nindent 14 }}
+              securityContext: {{- toYaml $.Values.securityContext | nindent 16 }}
+              volumeMounts: [{ name: data, mountPath: /data }]
+          volumes: {{- include "warden.volume" $ | nindent 12 }}
+{{- end }}
+{{- end }}

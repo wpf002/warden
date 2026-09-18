@@ -1,0 +1,6 @@
+apiVersion: v2
+name: warden
+description: AI-assisted SOC pipeline - detection, correlation, guardrailed response, analyst console
+type: application
+version: 0.7.0
+appVersion: "0.7.0"

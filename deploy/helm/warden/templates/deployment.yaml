@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "warden.fullname" . }}
+  labels: {{- include "warden.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      {{- include "warden.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "warden.selector" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.service.port }}"
+        prometheus.io/path: /metrics
+    spec:
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: warden
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+          env: [{ name: PORT, value: "{{ .Values.service.port }}" }]
+          {{- include "warden.env" . | nindent 10 }}
+          ports: [{ name: http, containerPort: {{ .Values.service.port }} }]
+          readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 60, periodSeconds: 30 }
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes: {{- include "warden.volume" . | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

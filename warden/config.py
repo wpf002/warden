@@ -51,6 +51,7 @@ class Settings:
     trusted_proxies: str = field(default_factory=lambda: _env("WARDEN_TRUSTED_PROXIES", "127.0.0.1/32"))
     proxy_user_header: str = field(default_factory=lambda: _env("WARDEN_PROXY_USER_HEADER", "x-forwarded-user"))
     proxy_groups_header: str = field(default_factory=lambda: _env("WARDEN_PROXY_GROUPS_HEADER", "x-forwarded-groups"))
+    proxy_default_role: str = field(default_factory=lambda: _env("WARDEN_PROXY_DEFAULT_ROLE", "viewer"))
     analyst_group: str = field(default_factory=lambda: _env("WARDEN_ANALYST_GROUP", "soc-analysts"))
     admin_group: str = field(default_factory=lambda: _env("WARDEN_ADMIN_GROUP", "soc-admins"))
 

@@ -1,0 +1,14 @@
+.venv
+.git
+**/__pycache__
+.pytest_cache
+data/state
+data/chroma
+data/attack
+data/real
+data/soak
+web/node_modules
+web/*.tsbuildinfo
+warden/static/console
+.env
+.claude

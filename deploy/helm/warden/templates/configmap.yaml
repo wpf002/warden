@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "warden.fullname" . }}
+  labels: {{- include "warden.labels" . | nindent 4 }}
+data:
+  WARDEN_DATA_DIR: /data
+  {{- range $k, $v := .Values.config }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

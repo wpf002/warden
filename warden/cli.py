@@ -283,7 +283,7 @@ def cmd_demo(a):
         if c.history_file:
             store.add_events(load_file(c.history_file))
         n += len(run(events=load_file(c.events_file), kb=kb, analyzer=get_analyzer(), store=store))
-    print(f"loaded {n} cases into {settings.data_dir / 'state'}; start the console with `warden serve`")
+    print(f"loaded {n} cases; start the console with `warden serve`")
 
 
 def cmd_serve(a):

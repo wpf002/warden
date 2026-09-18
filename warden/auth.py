@@ -108,7 +108,8 @@ def current_user(request: Request) -> User:
         if not name:
             raise _unauthorized("proxy did not supply an identity")
         groups = {g.strip() for g in (request.headers.get(settings.proxy_groups_header) or "").split(",")}
-        role = "admin" if settings.admin_group in groups else "analyst" if settings.analyst_group in groups else "viewer"
+        role = "admin" if settings.admin_group in groups else "analyst" if settings.analyst_group in groups \
+            else settings.proxy_default_role
         return User(name, role, request.headers.get("x-warden-tenant") or settings.tenant)
     raise HTTPException(500, f"unknown WARDEN_AUTH mode {mode!r}")
 

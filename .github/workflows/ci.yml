@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push: { branches: [main] }
+  pull_request:
+
+permissions: { contents: read }
+
+concurrency: { group: "${{ github.workflow }}-${{ github.ref }}", cancel-in-progress: true }
+
+env:
+  WARDEN_LLM: mock
+  WARDEN_EMBEDDINGS: hash
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: requirements*.txt }
+      - run: pip install -r requirements-dev.txt
+      - name: Fetch real attack recordings (hash-pinned)
+        run: python scripts/fetch_real_samples.py
+      - name: Tests, including the red-team suite
+        run: pytest -q
+      - name: Synthetic eval (fails below F1 0.95)
+        run: python -m warden.cli eval --fail-under 0.95
+      - name: Real-log eval
+        run: python -m warden.cli eval --real --fail-under 0.95
+      - name: Detection mappings match current ATT&CK
+        run: |
+          curl -sSfL -o /tmp/attack.json https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack/enterprise-attack.json
+          python -m warden.cli attack-ingest --file /tmp/attack.json --no-index
+          python -m warden.cli detections --check-attack
+
+  console:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+
+  deploy-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Helm lint and render
+        run: |
+          docker run --rm -v "$PWD/deploy/helm:/charts" alpine/helm:3 lint /charts/warden
+          docker run --rm -v "$PWD/deploy/helm:/charts" alpine/helm:3 template ci /charts/warden --set ingress.enabled=true > /dev/null
+      - name: Terraform fmt and validate
+        run: |
+          docker run --rm -v "$PWD/deploy/terraform/aws:/w" -w /w hashicorp/terraform:1.9 fmt -check -recursive
+          docker run --rm -v "$PWD/deploy/terraform/aws:/w" -w /w hashicorp/terraform:1.9 init -backend=false -input=false
+          docker run --rm -v "$PWD/deploy/terraform/aws:/w" -w /w hashicorp/terraform:1.9 validate
+      - name: Build image
+        run: docker build -t warden:ci .

@@ -87,3 +87,21 @@ def test_unverified_analysis_holds_actions_for_a_human(tmp_path):
     st = {a.action: a.status for a in case.actions}
     assert st == {"block_ip": "pending_approval", "notify": "executed"}
     assert case.verification and any(l.startswith("VERIFY") for l in case.guardrail_log)
+
+
+def test_a_failed_model_call_keeps_the_case_and_takes_no_action(tmp_path):
+    from warden.agent import run_alert
+    from warden.knowledge import KnowledgeBase
+
+    class Down:
+        model, last_usage = "down", {}
+
+        def analyze(self, alert, docs, context=None):
+            raise RuntimeError("503 overloaded")
+
+    store = CaseStore(tmp_path)
+    case = run_alert(_alert(), KnowledgeBase(persist=False), Down(), store)
+    assert case.analysis is None and case.actions == [] and case.status == "open"
+    assert any("ANALYSIS FAILED" in l for l in case.guardrail_log)
+    assert store.llm_calls("A1")[0]["error"].startswith("RuntimeError")
+    assert store.get("A1") is not None
