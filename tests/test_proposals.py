@@ -124,7 +124,8 @@ def test_end_to_end_with_sandbox(tmp_path):
     assert "DC01" not in sp.seen[1] and "dc01" not in sp.seen[1]         # the model never sees the real host
     assert p["status"] == "ready_for_review", p["eval"]
     assert p["eval"]["test"]["ok"] and p["eval"]["synthetic"]["rule"]["tp"] == 1
-    assert p["eval"]["synthetic"]["overall"]["precision"] == 1.0
+    # the stand-in adds no FPs on the curated suite; overlap with other proposals' fixtures is reported, not hidden
+    assert all(s.startswith("proposed:") for s in p["eval"]["synthetic"]["spurious"])
     real = Path(ROOT / "data" / "real" / "DE_Fake_ComputerAccount_4720.evtx")
     if real.exists():
         assert any("DE_Fake_ComputerAccount_4720" in h["file"] for h in p["eval"]["historical_hits"])

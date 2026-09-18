@@ -360,7 +360,7 @@ from warden.ingest import load_file
 rule = sys.argv[1]
 out = {}
 for name, root in (("synthetic", "data/eval"), ("real", "data/eval-real")):
-    cases = [c for c in evaluate.discover(Path(root)) if c.events_file.exists()]
+    cases = evaluate.discover(Path(root), skip_missing=True)
     rep = evaluate.run(cases, with_llm=False)
     out[name] = {"overall": rep.to_dict()["overall"], "rule": rep.to_dict()["per_rule"].get(rule),
                  "spurious": [s for s in rep.spurious if f": {rule} " in s]}
