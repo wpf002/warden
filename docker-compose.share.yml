@@ -1,0 +1,14 @@
+# Temporary public link for a demo, free, no account: a Cloudflare quick tunnel.
+# Requires real auth, because the console becomes reachable from the internet:
+#   WARDEN_AUTH=basic and WARDEN_USERS=... in .env   (python -m warden.cli hash-password)
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml -f docker-compose.share.yml up -d
+#   docker compose logs share | grep trycloudflare.com     # the https URL
+# Stop sharing: docker compose -f docker-compose.yml -f docker-compose.demo.yml -f docker-compose.share.yml stop share
+services:
+  warden:
+    environment:
+      WARDEN_ALLOW_NOAUTH: "0"      # tunnel traffic is not localhost: never serve it without auth
+  share:
+    image: cloudflare/cloudflared:2025.8.1
+    command: ["tunnel", "--no-autoupdate", "--url", "http://warden:8000"]
+    depends_on: [warden]

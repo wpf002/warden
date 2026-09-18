@@ -116,6 +116,8 @@ Goal: catch things no rule names, and be honest about what that means.
 
 Exit criteria: baselines built from real logs; anomaly detector surfaces a planted unknown in fixtures; FP rate trending down over a two-week soak.
 
+**Status (2026-09):** done. Baselines built from a real 24-day OpenSSH log; `scripts/soak_real.py` scores 14 log days of that real traffic with a simulated analyst: FPs 4 in week one, 2 in week two, both planted takeovers caught. A live two-week soak on production traffic waits for a deployment.
+
 ---
 
 ## Phase 6: Detection proposals from feedback (2 weeks)
@@ -152,7 +154,7 @@ Goal: something a second person or a small company can run.
 
 Exit criteria: fresh AWS account to running Warden in under an hour from the Terraform; red-team suite green in CI; two tenants isolated in one deployment.
 
-**Status (2026-09):** red-team suite green in CI and tenant isolation done. Cloud deployment is **deferred**: the AWS Terraform (`deploy/terraform/aws`) is written and passes `terraform validate` but is not applied, because the reference stack costs about $150/month. Azure and GCP equivalents are not written; they would cost about the same. Development runs on Docker Compose locally at $0. Apply the AWS stack when a paying user needs a hosted deployment, and write Azure or GCP only when a user asks for that cloud.
+**Status (2026-09):** red-team suite green in CI and tenant isolation done. Cloud deployment is **deferred**: the AWS Terraform (`deploy/terraform/aws`) is written and passes `terraform validate` but is not applied, because the reference stack costs about $150/month. Azure and GCP equivalents are not written; they would cost about the same. Development runs on Docker Compose locally at $0. Apply the AWS stack when a paying user needs a hosted deployment, and write Azure or GCP only when a user asks for that cloud. For demos, `docker-compose.demo.yml` stands in: a stateful Okta/Falcon sandbox, moto for AWS, Mailpit for notifications, and an optional Cloudflare quick tunnel for a temporary public link.
 
 ---
 

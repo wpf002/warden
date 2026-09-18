@@ -43,6 +43,26 @@ server-rendered pages remain at `/classic`.
 The Helm chart is linted and rendered, and the Terraform validates, both in CI.
 Neither has been applied to a live cluster or account.
 
+### Demo stack ($0, no vendor accounts)
+
+Hosted cloud deployment is deferred (see ROADMAP Phase 7). The demo stack stands in for
+what it would touch, all running locally, with actions executed live against the stand-ins:
+
+```
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+```
+
+| Gap | Stand-in | See it |
+|---|---|---|
+| Okta org, CrowdStrike tenant | `warden/sandbox/vendors.py`, stateful, only the operations the vendors document (contract-tested against Okta's OpenAPI spec and Falcon's endpoint catalog) | http://localhost:5056/state |
+| AWS account | moto: `block_ip` writes real NACL deny rules | port 5055 |
+| Email / paging | Mailpit: `notify` sends real email | http://localhost:8025 |
+| Two-week production soak | `scripts/soak_real.py` replays 24 days of real SSH traffic | below |
+| Hosted URL | `docker-compose.share.yml`: a free Cloudflare quick tunnel, auth required | `docker compose logs share` |
+
+The `seed` service loads the demo scenarios once. The analyzer is the offline mock unless
+`WARDEN_LLM=anthropic` is exported, so the demo makes no API calls.
+
 ## Ingest
 
 Adapters in `warden/adapters/`, one per source, autodetected from the file:
@@ -134,6 +154,12 @@ out of the baseline when profiles update.
 moves, a rollout, a recurring maintenance night, two planted recon runs): FPs 13 in week
 one, 11 in week two, both recon runs caught. It is a simulation; real FP rates need real
 logs and at least 7 days of history per entity.
+
+`scripts/soak_real.py` does the same on real traffic: the Loghub OpenSSH log from an
+internet-facing server, 10 days of baseline and 14 log days scored (Dec 20 to Jan 7, with
+a gap Dec 24 to 28 in the source), 1,700+ user entities and up to 31k events a day. With
+a simulated analyst: FPs 4 in week one, 2 in week two, both planted takeovers caught.
+`tests/test_anomaly_real.py` holds the last week out: at most one alert a day.
 
 ## Detection proposals
 
@@ -278,7 +304,5 @@ pytest
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md). Phase 1 foundations (event model, detection registry, eval
-harness) and the first slice of Phases 2 and 3 (two new identity detections, ATT&CK
-ingest) are in. Next up: real ingestion adapters, SQLite storage, dashboard auth, and the
-rest of the identity sweep with cross-alert correlation.
+See [ROADMAP.md](ROADMAP.md). Phases 1 to 7 are built. Hosted cloud deployment is deferred
+for cost; the demo stack above covers it locally.

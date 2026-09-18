@@ -124,3 +124,40 @@ def test_falcon_requests_match_the_falcon_api(falcon_spec):
     # the FQL filter the lookup sends must use a field Falcon documents for device queries
     lookup = next(r for r in rec.calls if r.url.path == "/devices/queries/devices/v1")
     assert lookup.url.params["filter"].split(":")[0] == "hostname"
+
+
+def test_vendor_sandbox_serves_only_documented_operations(okta_spec, falcon_spec):
+    """The demo sandbox must not accept anything the real vendors would reject."""
+    from fastapi.routing import APIRoute
+
+    from warden.sandbox.vendors import app
+    for r in app.routes:
+        if not isinstance(r, APIRoute) or r.path == "/state":
+            continue
+        for m in r.methods:
+            spec = okta_spec if r.path.startswith("/api/v1/") else falcon_spec
+            path = re.sub(r"\{[^}]+\}", "x", r.path)
+            spec.match(m, path)
+
+
+def test_connectors_against_vendor_sandbox():
+    from fastapi.testclient import TestClient
+
+    from warden.sandbox import vendors
+    tc = TestClient(vendors.app)
+    tr = httpx.MockTransport(lambda req: _relay(tc, req))
+    okta = Okta(dry_run=False, org="http://sandbox", token="t", transport=tr)
+    r = okta.execute("lock_user", "jlee@corp.example", ALERT)
+    assert vendors.USERS["jlee@corp.example"]["status"] == "SUSPENDED"
+    okta.rollback(r)
+    assert vendors.USERS["jlee@corp.example"]["status"] == "ACTIVE"
+    cs = CrowdStrike(dry_run=False, base="http://sandbox", client_id="a", secret="b", transport=tr)
+    r = cs.execute("isolate_host", "ws-17", ALERT)
+    assert vendors.HOSTS["ws-17"]["status"] == "contained"
+    cs.rollback(r)
+    assert vendors.HOSTS["ws-17"]["status"] == "normal"
+
+
+def _relay(tc, req: httpx.Request) -> httpx.Response:
+    r = tc.request(req.method, req.url.raw_path.decode(), headers=dict(req.headers), content=req.content)
+    return httpx.Response(r.status_code, content=r.content, headers=r.headers)

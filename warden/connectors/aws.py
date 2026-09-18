@@ -5,7 +5,8 @@ aws_nacl  block_ip:            DENY entries (ingress and egress) in a network AC
 aws_iam   lock_user:           inline deny-all policy plus every active access key deactivated
           disable_access_key:  deactivate the user's active access keys
 
-Config: WARDEN_AWS_NACL_ID (the ACL to write), AWS_REGION, standard AWS credentials.
+Config: WARDEN_AWS_NACL_ID (the ACL to write, or "default" for the default VPC's ACL), AWS_REGION,
+standard AWS credentials.
 WARDEN_AWS_ENDPOINT points boto3 at an emulator (moto server) for sandbox runs.
 """
 from __future__ import annotations
@@ -45,6 +46,13 @@ class AwsNacl(Connector):
             self._ec2 = _client("ec2")
         return self._ec2
 
+    def _resolve(self) -> None:
+        if self.nacl_id == "default":
+            acls = self.ec2.describe_network_acls(Filters=[{"Name": "default", "Values": ["true"]}])["NetworkAcls"]
+            if not acls:
+                raise RuntimeError("no default network ACL in this region")
+            self.nacl_id = acls[0]["NetworkAclId"]
+
     def _free_rules(self, egress: bool) -> int:
         acl = self.ec2.describe_network_acls(NetworkAclIds=[self.nacl_id])["NetworkAcls"][0]
         used = {e["RuleNumber"] for e in acl["Entries"] if e["Egress"] == egress}
@@ -54,6 +62,8 @@ class AwsNacl(Connector):
         if not self.nacl_id:
             return Receipt(self.name, action, target, False, "WARDEN_AWS_NACL_ID is not set")
         cidr = f"{target}/32"
+        if not self.dry_run:
+            self._resolve()
         if self.dry_run:
             return self._dry(action, target, f"add DENY {cidr} in/out to {self.nacl_id}")
         undo = {"nacl_id": self.nacl_id, "entries": []}

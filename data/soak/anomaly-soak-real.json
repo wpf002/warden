@@ -1,0 +1,121 @@
+{
+  "week1_fp": 4,
+  "week2_fp": 2,
+  "planted": 2,
+  "planted_caught": 2,
+  "days": [
+    {
+      "day": "2025-12-20",
+      "events": 1935,
+      "anomaly_cases": 1,
+      "tp": 0,
+      "fp": 1,
+      "planted_caught": null
+    },
+    {
+      "day": "2025-12-21",
+      "events": 1982,
+      "anomaly_cases": 1,
+      "tp": 0,
+      "fp": 1,
+      "planted_caught": null
+    },
+    {
+      "day": "2025-12-22",
+      "events": 2450,
+      "anomaly_cases": 1,
+      "tp": 0,
+      "fp": 1,
+      "planted_caught": null
+    },
+    {
+      "day": "2025-12-23",
+      "events": 875,
+      "anomaly_cases": 0,
+      "tp": 0,
+      "fp": 0,
+      "planted_caught": null
+    },
+    {
+      "day": "2025-12-29",
+      "events": 434,
+      "anomaly_cases": 1,
+      "tp": 1,
+      "fp": 0,
+      "planted_caught": true
+    },
+    {
+      "day": "2025-12-30",
+      "events": 13249,
+      "anomaly_cases": 0,
+      "tp": 0,
+      "fp": 0,
+      "planted_caught": null
+    },
+    {
+      "day": "2025-12-31",
+      "events": 4426,
+      "anomaly_cases": 1,
+      "tp": 0,
+      "fp": 1,
+      "planted_caught": null
+    },
+    {
+      "day": "2026-01-01",
+      "events": 13597,
+      "anomaly_cases": 0,
+      "tp": 0,
+      "fp": 0,
+      "planted_caught": null
+    },
+    {
+      "day": "2026-01-02",
+      "events": 25464,
+      "anomaly_cases": 1,
+      "tp": 0,
+      "fp": 1,
+      "planted_caught": null
+    },
+    {
+      "day": "2026-01-03",
+      "events": 31027,
+      "anomaly_cases": 0,
+      "tp": 0,
+      "fp": 0,
+      "planted_caught": null
+    },
+    {
+      "day": "2026-01-04",
+      "events": 26749,
+      "anomaly_cases": 2,
+      "tp": 1,
+      "fp": 1,
+      "planted_caught": true
+    },
+    {
+      "day": "2026-01-05",
+      "events": 8611,
+      "anomaly_cases": 0,
+      "tp": 0,
+      "fp": 0,
+      "planted_caught": null
+    },
+    {
+      "day": "2026-01-06",
+      "events": 2069,
+      "anomaly_cases": 0,
+      "tp": 0,
+      "fp": 0,
+      "planted_caught": null
+    },
+    {
+      "day": "2026-01-07",
+      "events": 2007,
+      "anomaly_cases": 0,
+      "tp": 0,
+      "fp": 0,
+      "planted_caught": null
+    }
+  ],
+  "note": "real Loghub OpenSSH traffic, simulated analyst; see scripts/soak_real.py"
+}

@@ -30,6 +30,7 @@ services:
   scheduler:
     image: warden:local
     command: ["scheduler"]
+    healthcheck: { disable: true }   # the image's check probes the API port, which the scheduler doesn't serve
     env_file: [.env]
     environment: *env
     volumes: [wardendata:/data]

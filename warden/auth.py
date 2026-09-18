@@ -86,7 +86,7 @@ def current_user(request: Request) -> User:
     mode = settings.auth_mode
     if mode == "none":
         host = request.client.host if request.client else ""
-        if host not in ("127.0.0.1", "::1", "localhost", "testclient") and not os.environ.get("WARDEN_ALLOW_NOAUTH"):
+        if host not in ("127.0.0.1", "::1", "localhost", "testclient") and os.environ.get("WARDEN_ALLOW_NOAUTH", "").lower() not in ("1", "true", "yes"):
             raise HTTPException(403, "WARDEN_AUTH=none only serves localhost")
         return User("local-dev", "admin", settings.tenant)
     if mode == "basic":
