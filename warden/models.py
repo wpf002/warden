@@ -50,17 +50,21 @@ class Alert(BaseModel):
 
     detail: dict = Field(default_factory=dict)
     evidence: list[dict] = Field(default_factory=list)
+    # set on incidents built by correlate.py: the alerts this one merges
+    members: list["Alert"] = Field(default_factory=list)
+
+    @property
+    def is_incident(self) -> bool:
+        return bool(self.members)
+
+    def rules(self) -> list[str]:
+        return [m.rule for m in self.members] if self.members else [self.rule]
+
+    def playbooks(self) -> list[str]:
+        return [m.playbook for m in self.members if m.playbook] if self.members else ([self.playbook] if self.playbook else [])
 
     def all_ips(self) -> set[str]:
         return {ip for ip in [self.source_ip, *self.related_ips] if ip}
-
-
-class Incident(BaseModel):
-    """Placeholder for Phase 2 correlation: several alerts on one entity, one narrative."""
-    id: str
-    ts: datetime
-    title: str
-    alert_ids: list[str] = Field(default_factory=list)
 
 
 class RecommendedAction(BaseModel):

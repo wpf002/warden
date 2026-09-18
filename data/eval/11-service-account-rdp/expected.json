@@ -1,0 +1,17 @@
+{
+  "name": "service account RDP into the jump host",
+  "description": "svc-sql, which runs the database agents, opens an RDP session on jump-01.",
+  "alerts": [
+    {
+      "rule": "service_account_interactive",
+      "match": {
+        "user": "svc-sql"
+      },
+      "label": "true_positive",
+      "expect_actions": {
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

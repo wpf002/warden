@@ -83,7 +83,7 @@ class CaseStore:
         if since:
             q = q.where(db.events.c.ts >= since)
         if until:
-            q = q.where(db.events.c.ts <= until)
+            q = q.where(db.events.c.ts < until)
         if kind:
             q = q.where(db.events.c.kind == kind)
         if user:

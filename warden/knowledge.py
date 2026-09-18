@@ -104,22 +104,49 @@ class KnowledgeBase:
         # function gets its own collection. Switching WARDEN_EMBEDDINGS reindexes cleanly.
         self.col = self.client.get_or_create_collection(f"{COLLECTION}_{self.ef.name()}", embedding_function=self.ef)
         self._snapshot: str | None = None
+        self._bm = None
+        self._docs: dict = {}
 
-    def index_dir(self, path: Path | None = None) -> int:
+    def index_dir(self, path: Path | None = None, only: set[str] | None = None) -> int:
         path = path or settings.knowledge_dir
         ids, docs, metas = [], [], []
         for f in sorted(path.glob("*.md")):
+            if only is not None and f.stem not in only:
+                continue
             text = f.read_text()
+            sha = hashlib.sha1(text.encode()).hexdigest()[:12]
             doc_techs = techniques_in(text)
             for i, c in enumerate(chunk(text)):
                 ids.append(f"{f.stem}#{i}")
                 docs.append(c)
-                metas.append({"doc": f.stem, "chunk": i, "kind": f.stem.split("-")[0],
+                metas.append({"doc": f.stem, "chunk": i, "kind": f.stem.split("-")[0], "sha": sha,
                               **technique_meta(techniques_in(c) or doc_techs)})
         if ids:
             self.col.upsert(ids=ids, documents=docs, metadatas=metas)
         self.invalidate()
         return len(ids)
+
+    def sync(self, path: Path | None = None) -> dict:
+        """Bring the index in line with the markdown on disk: embed new or edited docs,
+        drop chunks of deleted ones. Cheap when nothing changed (hash comparison only)."""
+        path = path or settings.knowledge_dir
+        on_disk = {f.stem: hashlib.sha1(f.read_text().encode()).hexdigest()[:12] for f in path.glob("*.md")}
+        got = self.col.get(where={"kind": {"$ne": "attack"}}, include=["metadatas"])
+        indexed: dict[str, set[str]] = {}
+        chunk_ids: dict[str, list[str]] = {}
+        for i, m in zip(got["ids"], got["metadatas"]):
+            indexed.setdefault(m["doc"], set()).add(m.get("sha", ""))
+            chunk_ids.setdefault(m["doc"], []).append(i)
+        changed = {d for d, h in on_disk.items() if indexed.get(d) != {h}}
+        removed = {d for d in indexed if d not in on_disk}
+        stale = [i for d in changed | removed for i in chunk_ids.get(d, [])]
+        if stale:
+            self.col.delete(ids=stale)
+        if changed:
+            self.index_dir(path, only=changed)
+        if stale or changed:
+            self.invalidate()
+        return {"indexed": sorted(changed), "removed": sorted(removed)}
 
     def snapshot_id(self) -> str:
         """Content hash of what is indexed: doc ids plus the ATT&CK manifest version.
@@ -139,24 +166,52 @@ class KnowledgeBase:
 
     def invalidate(self) -> None:
         self._snapshot = None
+        self._bm = None
 
     def add_learned_case(self, doc_id: str, text: str) -> None:
         """Feedback loop writes here. Also persisted to disk by feedback.py."""
         self.col.upsert(ids=[f"{doc_id}#0"], documents=[text], metadatas=[{"doc": doc_id, "chunk": 0, "kind": "learned"}])
         self.invalidate()
 
-    def retrieve(self, query: str, k: int = 5, where: dict | None = None) -> list[dict]:
+    def _bm25(self):
+        if self._bm is None:
+            from .bm25 import BM25
+            got = self.col.get(include=["documents", "metadatas"])
+            self._bm = BM25(got["ids"], got["documents"], got["metadatas"])
+            self._docs = {i: (d, m) for i, d, m in zip(got["ids"], got["documents"], got["metadatas"])}
+        return self._bm
+
+    def retrieve(self, query: str, k: int = 5, where: dict | None = None, mode: str | None = None) -> list[dict]:
+        """Hybrid by default: vector and BM25 candidates fused with reciprocal rank fusion.
+        mode="vector" or "bm25" runs one side alone (used by the eval to compare)."""
+        from .bm25 import rrf
+
+        mode = mode or settings.retrieval_mode
         n = self.col.count()
         if n == 0:
             return []
-        res = self.col.query(query_texts=[query], n_results=min(k, n), where=where or None)
-        if not res["ids"] or not res["ids"][0]:
-            return []
-        return [
-            {"id": i, "text": d, "doc": m["doc"], "kind": m.get("kind", ""),
-             "technique": m.get("technique", ""), "distance": round(float(dist), 4)}
-            for i, d, m, dist in zip(res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0])
-        ]
+        pool = min(n, max(k * 4, 20))
+        vec: list[dict] = []
+        if mode in ("hybrid", "vector"):
+            res = self.col.query(query_texts=[query], n_results=pool, where=where or None)
+            if res["ids"] and res["ids"][0]:
+                vec = [{"id": i, "text": d, "doc": m["doc"], "kind": m.get("kind", ""),
+                        "technique": m.get("technique", ""), "distance": round(float(dist), 4)}
+                       for i, d, m, dist in zip(res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0])]
+        if mode == "vector":
+            return vec[:k]
+        kw = self._bm25().search(query, pool, where)
+        order = rrf([d["id"] for d in vec], [i for i, _ in kw]) if mode == "hybrid" else [i for i, _ in kw]
+        by_id = {d["id"]: d for d in vec}
+        out = []
+        for i in order[:k]:
+            if i in by_id:
+                out.append(by_id[i])
+            else:
+                d, m = self._docs[i]
+                out.append({"id": i, "text": d, "doc": m["doc"], "kind": m.get("kind", ""),
+                            "technique": m.get("technique", ""), "distance": None})
+        return out
 
     def retrieve_by_technique(self, query: str, techniques: list[str], k: int = 3,
                               kind: str | None = None) -> list[dict]:
@@ -171,27 +226,48 @@ class KnowledgeBase:
         return self.retrieve(query, k, where=where)
 
     def retrieve_for_alert(self, alert: Alert, k: int = 5) -> list[dict]:
-        """Two passes with different jobs.
+        """Three passes, each with the query that suits its corpus.
 
-        ATT&CK is 4,000+ chunks of reference material and will swamp an unfiltered
-        search, so it is reachable only through the detection's mapped technique ids.
-        The operational corpus - playbooks, policies, past incidents, learned cases -
-        gets the rest of the budget from an unfiltered search.
+        1. ATT&CK reference, reachable only through the alert's mapped technique ids. It is
+           4,000+ chunks and would swamp any unfiltered search.
+        2. Playbooks, policies, and MITRE notes, searched with what the detection *is*
+           (rule names, descriptions, technique ids) and not with entity values: an IP or a
+           user name says nothing about which playbook applies.
+        3. Past incidents and learned cases, searched with the entities too, because
+           "we saw svc-backup do this before" is exactly what those documents record.
         """
-        q = (
-            f"{alert.rule.replace('_', ' ')} {alert.failed_attempts} failed logins from {alert.source_ip} "
-            f"geo {alert.geo} users {' '.join(alert.users[:5])} hosts {' '.join(alert.hosts)} "
-            f"asset {alert.asset_tier} "
-            + ("successful login after failures account compromise" if alert.success_after_failures else "")
-            + (" service account internal misconfiguration" if any(u.startswith("svc-") for u in alert.users) else "")
-            + " playbook response policy MITRE "
-            + " ".join(alert.mitre)
-        )
-        n_attack = max(1, k // 3) if alert.mitre else 0
-        out: list[dict] = self.retrieve_by_technique(q, alert.mitre, k=n_attack, kind="attack")
+        from .detections import REGISTRY, load_all
+
+        load_all()
+        rules = alert.rules()
+        names = " ".join(REGISTRY[r].name if r in REGISTRY else r.replace("_", " ") for r in rules)
+        flags = []
+        if alert.success_after_failures:
+            flags.append("successful login after failures account compromised")
+        if any(u.lower().startswith(("svc-", "svc_", "sa-")) for u in alert.users):
+            flags.append("service account")
+        if alert.geo == "internal":
+            flags.append("internal source")
+        if alert.asset_tier == "crown_jewel":
+            flags.append("crown jewel asset")
+        ops_q = " ".join([names, " ".join(r.replace("_", " ") for r in rules), " ".join(alert.mitre), *flags])
+        case_q = ops_q + f" {alert.source_ip} {' '.join(alert.users[:5])} {' '.join(alert.hosts[:3])}"
+
+        n_attack = 1 if alert.mitre and k >= 3 else 0
+        n_cases = 1 if k >= 4 else 0
+        out: list[dict] = self.retrieve_by_technique(ops_q, alert.mitre, k=n_attack, kind="attack") if n_attack else []
         seen = {d["id"] for d in out}
-        for d in self.retrieve(q, k, where={"kind": {"$ne": "attack"}}):
-            if d["id"] not in seen and len(out) < k:
-                out.append(d)
-                seen.add(d["id"])
+
+        def take(docs: list[dict], limit: int) -> None:
+            for d in docs:
+                if len(out) >= limit:
+                    return
+                if d["id"] not in seen:
+                    out.append(d)
+                    seen.add(d["id"])
+
+        # playbooks first so the mapped playbook lands high; the case pass fills what's left
+        take(self.retrieve(ops_q, k, where={"kind": {"$in": ["playbook", "policy", "mitre"]}}), k - n_cases)
+        take(self.retrieve(case_q, k, where={"kind": {"$in": ["incident", "learned"]}}), k)
+        take(self.retrieve(ops_q, k, where={"kind": {"$ne": "attack"}}), k)
         return out

@@ -85,7 +85,7 @@ def _logs(tmp_path):
 
 def test_generated_logs_fire_every_detection(tmp_path):
     rules = {a.rule for a in detect(load_file(_logs(tmp_path)))}
-    assert rules == {"brute_force", "password_spray", "impossible_travel", "mfa_fatigue"}
+    assert {"brute_force", "password_spray", "impossible_travel", "mfa_fatigue"} <= rules
 
 
 def test_alerts_carry_mitre_and_playbook(tmp_path):

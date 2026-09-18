@@ -1,0 +1,17 @@
+{
+  "name": "one helpdesk operator resets four accounts in 15 minutes",
+  "description": "No matching tickets. Includes the CFO.",
+  "alerts": [
+    {
+      "rule": "password_reset_abuse",
+      "match": {
+        "user": "hd-operator7"
+      },
+      "label": "true_positive",
+      "expect_actions": {
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

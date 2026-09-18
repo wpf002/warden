@@ -1,0 +1,45 @@
+{
+  "name": "stolen session cookie replayed from Germany",
+  "description": "Same Okta session id, second IP, different client 41 minutes later.",
+  "alerts": [
+    {
+      "rule": "session_anomaly",
+      "match": {
+        "user": "tnguyen"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "impossible_travel",
+      "match": {
+        "user": "tnguyen"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "new_geo_login",
+      "match": {
+        "user": "tnguyen",
+        "geo": "DE"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "session_anomaly",
+        "impossible_travel"
+      ],
+      "label": "true_positive",
+      "risk_min": 80,
+      "expect_actions": {
+        "block_ip": "execute",
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "PB-016: the replay IP is hostile and gets blocked; the origin IP is the real user."
+    }
+  ]
+}

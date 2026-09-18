@@ -21,6 +21,7 @@ class Settings:
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY", ""))
     # needed only when the key is not scoped to a workspace
     anthropic_workspace_id: str = field(default_factory=lambda: _env("ANTHROPIC_WORKSPACE_ID", ""))
+    retrieval_mode: str = field(default_factory=lambda: _env("WARDEN_RETRIEVAL", "hybrid"))
     embeddings: str = field(default_factory=lambda: _env("WARDEN_EMBEDDINGS", "default"))
 
     data_dir: Path = field(default_factory=lambda: Path(_env("WARDEN_DATA_DIR", "data")))
@@ -45,6 +46,23 @@ class Settings:
     bf_window_sec: int = field(default_factory=lambda: int(_env("WARDEN_BF_WINDOW_SEC", "300")))
     spray_min_users: int = field(default_factory=lambda: int(_env("WARDEN_SPRAY_MIN_USERS", "5")))
     spray_max_per_user: float = field(default_factory=lambda: float(_env("WARDEN_SPRAY_MAX_PER_USER", "3")))
+    stuffing_min_users: int = field(default_factory=lambda: int(_env("WARDEN_STUFFING_MIN_USERS", "8")))
+    stuffing_min_ips: int = field(default_factory=lambda: int(_env("WARDEN_STUFFING_MIN_IPS", "4")))
+    home_countries: str = field(default_factory=lambda: _env("WARDEN_HOME_COUNTRIES", "US"))
+    dormant_days: int = field(default_factory=lambda: int(_env("WARDEN_DORMANT_DAYS", "60")))
+    new_geo_min_history: int = field(default_factory=lambda: int(_env("WARDEN_NEW_GEO_MIN_HISTORY", "3")))
+    lockout_storm_users: int = field(default_factory=lambda: int(_env("WARDEN_LOCKOUT_STORM_USERS", "5")))
+    reset_cluster: int = field(default_factory=lambda: int(_env("WARDEN_RESET_CLUSTER", "3")))
+    service_account_patterns: str = field(default_factory=lambda: _env("WARDEN_SERVICE_ACCOUNT_PATTERNS", "svc-*,svc_*,sa-*,*$"))
+    privileged_groups: str = field(default_factory=lambda: _env(
+        "WARDEN_PRIVILEGED_GROUPS",
+        "Domain Admins,Enterprise Admins,Schema Admins,Administrators,Account Operators,Backup Operators,"
+        "Server Operators,DnsAdmins,Group Policy Creator Owners,Global Administrator,Privileged Role Administrator,"
+        "Security Administrator,Exchange Administrator,Okta Super Admins,Super Administrator,Organization Administrator,"
+        "AdministratorAccess"))
+    change_window: str = field(default_factory=lambda: _env("WARDEN_CHANGE_WINDOW", ""))
+    history_days: int = field(default_factory=lambda: int(_env("WARDEN_HISTORY_DAYS", "90")))
+    correlation_window_sec: int = field(default_factory=lambda: int(_env("WARDEN_CORRELATION_WINDOW_SEC", "7200")))
     travel_max_kmh: int = field(default_factory=lambda: int(_env("WARDEN_TRAVEL_MAX_KMH", "900")))
     travel_min_km: int = field(default_factory=lambda: int(_env("WARDEN_TRAVEL_MIN_KM", "500")))
     mfa_threshold: int = field(default_factory=lambda: int(_env("WARDEN_MFA_THRESHOLD", "5")))

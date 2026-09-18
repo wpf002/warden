@@ -87,5 +87,5 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore):
 
 def run_alert(alert: Alert, kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore) -> Case:
     graph = build_graph(kb, analyzer, store)
-    out = graph.invoke({"case": Case(alert=alert)})
+    out = graph.invoke({"case": Case(alert=alert, incident_id=alert.id if alert.is_incident else None)})
     return out["case"]

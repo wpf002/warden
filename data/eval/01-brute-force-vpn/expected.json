@@ -8,6 +8,24 @@
         "source_ip": "203.0.113.42",
         "user": "john.doe"
       },
+      "label": "true_positive"
+    },
+    {
+      "rule": "new_geo_login",
+      "match": {
+        "user": "john.doe",
+        "geo": "RU"
+      },
+      "label": "true_positive",
+      "note": "the attacker's successful login is also john.doe's first from Russia"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "brute_force",
+        "new_geo_login"
+      ],
       "label": "true_positive",
       "risk_min": 80,
       "expect_actions": {
@@ -15,8 +33,7 @@
         "lock_user": "approve",
         "create_ticket": "execute",
         "notify": "execute"
-      },
-      "note": "PB-004: auto-block the source, hold the account lock for an analyst."
+      }
     }
   ]
 }

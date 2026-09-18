@@ -24,8 +24,8 @@ def cmd_gen_logs(a):
 
 def cmd_index(a):
     from .knowledge import KnowledgeBase
-    n = KnowledgeBase().index_dir()
-    print(f"indexed {n} chunks from {settings.knowledge_dir}")
+    r = KnowledgeBase().sync()
+    print(f"re-embedded {len(r['indexed'])} docs, removed {len(r['removed'])}, from {settings.knowledge_dir}")
 
 
 def cmd_run(a):

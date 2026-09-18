@@ -13,8 +13,7 @@
         "block_ip": "execute",
         "create_ticket": "execute",
         "notify": "execute"
-      },
-      "note": "PB-005 lowers the auto-block threshold to 70 for spray."
+      }
     }
   ]
 }

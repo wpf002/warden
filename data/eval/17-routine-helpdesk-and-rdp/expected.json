@@ -1,0 +1,5 @@
+{
+  "name": "one password reset and a normal admin RDP session",
+  "description": "Routine operations that look like two of the rules and must not fire.",
+  "alerts": []
+}

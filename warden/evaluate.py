@@ -74,11 +74,26 @@ class ExpectedAlert:
 
 
 @dataclass
+class ExpectedIncident:
+    rules: list[str]
+    label: str | None = None
+    expect_actions: dict[str, str] = field(default_factory=dict)
+    risk_min: int | None = None
+    risk_max: int | None = None
+    note: str = ""
+
+    def key(self) -> str:
+        return "incident:" + "+".join(sorted(self.rules))
+
+
+@dataclass
 class EvalCase:
     name: str
     events_file: Path
     expected: list[ExpectedAlert]
     description: str = ""
+    incidents: list[ExpectedIncident] = field(default_factory=list)
+    history_file: Path | None = None
 
     @classmethod
     def load(cls, d: Path) -> "EvalCase":
@@ -87,11 +102,14 @@ class EvalCase:
         if not events.exists():
             raise FileNotFoundError(f"{d.name}: events file {events} missing"
                                     + (" - run scripts/fetch_real_samples.py" if "real" in str(events) else ""))
+        hist = (d / spec["history"]).resolve() if spec.get("history") else None
         return cls(
             name=spec.get("name", d.name),
             description=spec.get("description", ""),
             events_file=events,
             expected=[ExpectedAlert(**e) for e in spec.get("alerts", [])],
+            incidents=[ExpectedIncident(**i) for i in spec.get("incidents", [])],
+            history_file=hist,
         )
 
 
@@ -135,6 +153,11 @@ class Report:
     risk_violations: list[str] = field(default_factory=list)
     misses: list[str] = field(default_factory=list)
     spurious: list[str] = field(default_factory=list)
+    incidents_expected: int = 0
+    incidents_merged: int = 0
+    unmerged: list[str] = field(default_factory=list)
+    cost_usd: float = 0.0
+    llm_calls: int = 0
 
     def counts(self, rule: str) -> Counts:
         return self.per_rule.setdefault(rule, Counts())
@@ -158,6 +181,10 @@ class Report:
         return self.action_agree / self.action_total if self.action_total else None
 
     @property
+    def merge_rate(self) -> float | None:
+        return self.incidents_merged / self.incidents_expected if self.incidents_expected else None
+
+    @property
     def retrieval_hit_rate(self) -> float | None:
         return self.retrieval_hits / self.retrieval_total if self.retrieval_total else None
 
@@ -172,7 +199,10 @@ class Report:
             "brier": round(self.brier, 4) if self.brier is not None else None,
             "action_agreement": round(self.action_agreement, 4) if self.action_agreement is not None else None,
             "retrieval_hit_rate": round(self.retrieval_hit_rate, 4) if self.retrieval_hit_rate is not None else None,
+            "incident_merge_rate": round(self.merge_rate, 4) if self.merge_rate is not None else None,
+            "llm_calls": self.llm_calls, "cost_usd": round(self.cost_usd, 4),
             "unexpected_executes": self.unexpected_executes,
+            "unmerged": self.unmerged,
             "risk_violations": self.risk_violations,
             "missed": self.misses,
             "spurious": self.spurious,
@@ -181,18 +211,25 @@ class Report:
 
 def run(cases: list[EvalCase] | None = None, kb: KnowledgeBase | None = None, analyzer=None,
         with_llm: bool = True, only: list[str] | None = None, k: int = 5) -> Report:
+    from .correlate import correlate
+
     cases = cases if cases is not None else discover()
     rep = Report()
     if with_llm:
-        kb = kb or KnowledgeBase()
-        if kb.col.count() == 0:
-            kb.index_dir()
+        if kb is None:   # a caller-supplied KB is the caller's to keep in sync
+            kb = KnowledgeBase()
+            kb.sync()
         analyzer = analyzer or get_analyzer()
 
     for case in cases:
-        alerts = detect(load_file(case.events_file), only=only)
+        prior = load_file(case.history_file) if case.history_file else None
+        alerts = detect(load_file(case.events_file), only=only, prior=prior)
+        subjects = correlate(alerts)
+        owner = {m.id: s for s in subjects for m in (s.members or [s])}
         unmatched = list(alerts)
+        matched: dict[str, tuple[ExpectedAlert, Alert]] = {}
 
+        # ---- detection
         for exp in case.expected:
             hit = next((a for a in unmatched if exp.matches(a)), None)
             c = rep.counts(exp.rule)
@@ -202,42 +239,80 @@ def run(cases: list[EvalCase] | None = None, kb: KnowledgeBase | None = None, an
                 continue
             c.tp += 1
             unmatched.remove(hit)
-            if with_llm:
-                _score_llm(rep, case, exp, hit, kb, analyzer, k)
-
+            matched[hit.id] = (exp, hit)
         for a in unmatched:
             rep.counts(a.rule).fp += 1
             rep.spurious.append(f"{case.name}: {a.rule} {a.source_ip or ','.join(a.users)}")
 
+        # ---- correlation
+        inc_subject: dict[int, Alert] = {}
+        for n, ei in enumerate(case.incidents):
+            rep.incidents_expected += 1
+            hit = next((s for s in subjects if s.is_incident and set(ei.rules) <= set(s.rules())), None)
+            if hit:
+                rep.incidents_merged += 1
+                inc_subject[n] = hit
+            else:
+                got = sorted({s.id: s.rules() for s in subjects}.values(), key=len, reverse=True)[:3]
+                rep.unmerged.append(f"{case.name}: wanted {'+'.join(ei.rules)}, got {got}")
+
+        if not with_llm:
+            continue
+
+        # ---- analysis, once per subject that carries a labeled expectation
+        judged: dict[str, tuple] = {}
+        for n, sub in inc_subject.items():
+            ei = case.incidents[n]
+            judged[sub.id] = (sub, ei.label, ei.expect_actions, ei.risk_min, ei.risk_max, ei.key())
+        for aid, (exp, alert) in matched.items():
+            sub = owner[aid]
+            if sub.id in judged:
+                continue
+            if sub.is_incident:
+                # an incident nobody wrote an expectation for: score it on its members' labels only
+                labels = [matched[m.id][0].label for m in sub.members if m.id in matched]
+                label = "true_positive" if "true_positive" in labels else (labels[0] if labels else None)
+                judged[sub.id] = (sub, label, {}, None, None, f"incident:{'+'.join(sub.rules())}")
+            else:
+                judged[sub.id] = (sub, exp.label, exp.expect_actions, exp.risk_min, exp.risk_max, exp.key())
+        for sub, label, acts, rmin, rmax, key in judged.values():
+            _score_subject(rep, case, sub, label, acts, rmin, rmax, key, kb, analyzer, k)
+
     return rep
 
 
-def _score_llm(rep: Report, case: EvalCase, exp: ExpectedAlert, alert: Alert,
-               kb: KnowledgeBase, analyzer, k: int) -> None:
-    docs = kb.retrieve_for_alert(alert, k=k)
-    if alert.playbook:
+def _score_subject(rep: Report, case: EvalCase, sub: Alert, label, expect_actions: dict, risk_min, risk_max,
+                   key: str, kb: KnowledgeBase, analyzer, k: int) -> None:
+    docs = kb.retrieve_for_alert(sub, k=k)
+    if sub.playbooks():
         rep.retrieval_total += 1
-        rep.retrieval_hits += any(d["doc"] == alert.playbook for d in docs[:3])
+        rep.retrieval_hits += any(d["doc"] in sub.playbooks() for d in docs[:3])
 
-    analysis = analyzer.analyze(alert, docs)
+    analysis = analyzer.analyze(sub, docs)
+    rep.llm_calls += 1
+    rep.cost_usd += (getattr(analyzer, "last_usage", {}) or {}).get("cost_usd") or 0.0
 
-    if exp.label in ("true_positive", "false_positive"):
-        y = 1.0 if exp.label == "true_positive" else 0.0
+    if label in ("true_positive", "false_positive"):
+        y = 1.0 if label == "true_positive" else 0.0
         rep.brier_terms.append((analysis.risk_score / 100.0 - y) ** 2)
-    if exp.risk_min is not None and analysis.risk_score < exp.risk_min:
-        rep.risk_violations.append(f"{case.name}: {exp.key()} risk {analysis.risk_score} < {exp.risk_min}")
-    if exp.risk_max is not None and analysis.risk_score > exp.risk_max:
-        rep.risk_violations.append(f"{case.name}: {exp.key()} risk {analysis.risk_score} > {exp.risk_max}")
+    if risk_min is not None and analysis.risk_score < risk_min:
+        rep.risk_violations.append(f"{case.name}: {key} risk {analysis.risk_score} < {risk_min}")
+    if risk_max is not None and analysis.risk_score > risk_max:
+        rep.risk_violations.append(f"{case.name}: {key} risk {analysis.risk_score} > {risk_max}")
 
     verdicts: dict[str, str] = {}
-    for d in guardrails.evaluate(alert, analysis):
-        verdicts.setdefault(d.action.action, d.verdict)   # first verdict per action type
-    for action, want in exp.expect_actions.items():
+    for d in guardrails.evaluate(sub, analysis):
+        # the most permissive outcome per action type is what the analyst would have seen happen
+        rank = {"deny": 0, "approve": 1, "execute": 2}
+        prev = verdicts.get(d.action.action)
+        if prev is None or rank[d.verdict] > rank[prev]:
+            verdicts[d.action.action] = d.verdict
+    for action, want in expect_actions.items():
         rep.action_total += 1
         rep.action_agree += verdicts.get(action, "absent") == want
     for action, got in verdicts.items():
-        if got == "execute" and action not in exp.expect_actions:
-            rep.unexpected_executes.append(f"{case.name}: {exp.key()} executed unexpected {action}")
+        if got == "execute" and action not in expect_actions and expect_actions:
+            rep.unexpected_executes.append(f"{case.name}: {key} executed unexpected {action}")
 
 
 # ---------------------------------------------------------------- output
@@ -258,9 +333,13 @@ def format_report(rep: Report, cases: list[EvalCase]) -> str:
         f"risk calibration (Brier, lower better)  {pct(rep.brier)}   [0.25 = uninformative]",
         f"action agreement with analyst           {pct(rep.action_agreement)}   ({rep.action_agree}/{rep.action_total})",
         f"retrieval hit rate (playbook in top 3)  {pct(rep.retrieval_hit_rate)}   ({rep.retrieval_hits}/{rep.retrieval_total})",
+        f"incidents merged as one                 {pct(rep.merge_rate)}   ({rep.incidents_merged}/{rep.incidents_expected})",
     ]
+    if rep.llm_calls:
+        lines.append(f"model calls {rep.llm_calls}, cost ${rep.cost_usd:.4f}")
     for label, items in (("MISSED", rep.misses), ("SPURIOUS", rep.spurious),
-                         ("UNEXPECTED EXECUTE", rep.unexpected_executes), ("RISK", rep.risk_violations)):
+                         ("UNEXPECTED EXECUTE", rep.unexpected_executes), ("RISK", rep.risk_violations),
+                         ("UNMERGED", rep.unmerged)):
         for it in items:
             lines.append(f"  {label:<20} {it}")
     return "\n".join(lines)

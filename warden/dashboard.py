@@ -22,7 +22,9 @@ app = FastAPI(title="Warden SOC")
 
 @lru_cache(maxsize=1)
 def _kb() -> KnowledgeBase:
-    return KnowledgeBase()
+    kb = KnowledgeBase()
+    kb.sync()
+    return kb
 
 
 store = CaseStore()
@@ -140,7 +142,7 @@ def run_pipeline(user: User = Depends(require("analyst"))):
 
 @app.post("/reindex")
 def reindex(user: User = Depends(require("admin"))):
-    _kb().index_dir()
+    _kb().sync()
     return RedirectResponse("/", status_code=303)
 
 

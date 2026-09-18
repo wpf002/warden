@@ -1,0 +1,20 @@
+{
+  "name": "contractor account wakes after 94 days",
+  "description": "contractor-kb last signed in 94 days ago; the contract ended. Sign-in to the VPN.",
+  "alerts": [
+    {
+      "rule": "dormant_account",
+      "match": {
+        "user": "contractor-kb"
+      },
+      "label": "true_positive",
+      "risk_min": 60,
+      "expect_actions": {
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ],
+  "history": "history.jsonl"
+}

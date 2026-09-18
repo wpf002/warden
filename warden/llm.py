@@ -93,6 +93,71 @@ class MockAnalyzer:
     last_usage: dict = {}
 
     def analyze(self, alert: Alert, docs: list[dict]) -> Analysis:
+        if alert.is_incident:
+            return self._incident(alert, docs)
+        return self._single(alert, docs)
+
+    # rule -> (technique, risk, severity, fp likelihood, actions). Mirrors the playbooks.
+    TABLE = {
+        "credential_stuffing": ("T1110.004 Brute Force: Credential Stuffing", 76, "high", "low", ["block_ip", "create_ticket", "notify"]),
+        "new_geo_login": ("T1078 Valid Accounts", 55, "medium", "medium", ["create_ticket", "notify"]),
+        "mfa_method_change": ("T1556.006 Modify Authentication Process: Multi-Factor Authentication", 86, "critical", "low",
+                              ["lock_user", "create_ticket", "notify"]),
+        "dormant_account": ("T1078 Valid Accounts", 62, "medium", "medium", ["lock_user", "create_ticket", "notify"]),
+        "service_account_interactive": ("T1078.002 Valid Accounts: Domain Accounts", 70, "high", "medium",
+                                        ["create_ticket", "notify"]),
+        "privileged_group_add": ("T1098 Account Manipulation", 84, "critical", "low", ["create_ticket", "notify"]),
+        "account_create_then_privilege": ("T1136 Create Account", 90, "critical", "low", ["lock_user", "create_ticket", "notify"]),
+        "session_anomaly": ("T1550.004 Use Alternate Authentication Material: Web Session Cookie", 85, "critical", "low",
+                            ["lock_user", "block_ip", "create_ticket", "notify"]),
+        "password_reset_abuse": ("T1098 Account Manipulation", 72, "high", "medium", ["create_ticket", "notify"]),
+        "lockout_storm": ("T1110 Brute Force", 68, "high", "low", ["create_ticket", "notify"]),
+    }
+
+    def _from_table(self, alert: Alert, cites: list[str]) -> Analysis:
+        tech, risk, sev, fp, acts = self.TABLE[alert.rule]
+        d = alert.detail
+        if alert.rule == "privileged_group_add" and d.get("in_change_window"):
+            risk, sev, fp = 45, "medium", "high"
+        if alert.asset_tier == "crown_jewel" and alert.rule in ("new_geo_login", "dormant_account"):
+            risk += 15
+        if d.get("succeeded_users") and "lock_user" not in acts:
+            acts = ["lock_user", *acts]
+        target_user = (d.get("member") or d.get("succeeded_users", [None])[0] if d.get("succeeded_users") or d.get("member")
+                       else (alert.users[0] if alert.users else ""))
+        recs = []
+        for a in acts:
+            tgt = {"block_ip": alert.source_ip, "lock_user": target_user, "create_ticket": alert.id, "notify": "soc"}[a]
+            if tgt:
+                recs.append(RecommendedAction(action=a, target=tgt, reason=f"{alert.rule} playbook"))
+        facts = ", ".join(f"{k}={v}" for k, v in list(d.items())[:4])
+        return Analysis(explanation=f"{alert.title}. {facts}.", mitre_attack=tech, risk_score=min(100, risk),
+                        severity=sev, false_positive_likelihood=fp, recommended_actions=recs, citations=cites)
+
+    SEV = ["low", "medium", "high", "critical"]
+    FPL = ["low", "medium", "high"]
+
+    def _incident(self, inc: Alert, docs: list[dict]) -> Analysis:
+        """Each stage analyzed alone, then combined: a chain is worse than its worst link."""
+        parts = [self._single(m, docs) for m in inc.members]
+        stages = len(set(inc.rules()))
+        risk = min(100, max(p.risk_score for p in parts) + 4 * (stages - 1))
+        seen, actions = set(), []
+        for p in parts:
+            for a in p.recommended_actions:
+                if (a.action, a.target) not in seen:
+                    seen.add((a.action, a.target))
+                    actions.append(a)
+        return Analysis(
+            explanation=f"{stages}-stage chain on {inc.detail.get('focus')}: "
+                        + " Then ".join(p.explanation for p in parts),
+            mitre_attack=", ".join(inc.mitre),
+            risk_score=risk,
+            severity=self.SEV[min(3, max(self.SEV.index(p.severity) for p in parts) + (1 if stages >= 3 else 0))],
+            false_positive_likelihood=self.FPL[min(self.FPL.index(p.false_positive_likelihood) for p in parts)],
+            recommended_actions=actions, citations=[d["id"] for d in docs[:3]])
+
+    def _single(self, alert: Alert, docs: list[dict]) -> Analysis:
         cites = [d["id"] for d in docs[:3]]
         svc = any(u.startswith("svc-") for u in alert.users)
         internal = alert.geo == "internal"
@@ -105,6 +170,8 @@ class MockAnalyzer:
                 recommended_actions=[RecommendedAction(action="create_ticket", target=alert.source_ip, reason="platform team to fix credential"),
                                      RecommendedAction(action="notify", target="soc", reason="FYI")],
                 citations=cites)
+        if alert.rule in self.TABLE:
+            return self._from_table(alert, cites)
         if alert.rule == "impossible_travel":
             d = alert.detail
             return Analysis(

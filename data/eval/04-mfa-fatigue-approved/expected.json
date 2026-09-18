@@ -8,6 +8,23 @@
         "user": "asmith",
         "source_ip": "185.220.101.44"
       },
+      "label": "true_positive"
+    },
+    {
+      "rule": "new_geo_login",
+      "match": {
+        "user": "asmith",
+        "geo": "NL"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "mfa_fatigue",
+        "new_geo_login"
+      ],
       "label": "true_positive",
       "risk_min": 80,
       "expect_actions": {
@@ -15,8 +32,7 @@
         "lock_user": "approve",
         "create_ticket": "execute",
         "notify": "execute"
-      },
-      "note": "PB-008: approval after a burst is a presumed compromise."
+      }
     }
   ]
 }

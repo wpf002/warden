@@ -1,0 +1,36 @@
+{
+  "name": "credential stuffing from a proxy pool, one hit",
+  "description": "12 accounts, 6 IPs, 2 tries per account, one shared automation user agent. pwong's leaked password works.",
+  "alerts": [
+    {
+      "rule": "credential_stuffing",
+      "match": {
+        "source_ip": "185.220.100.20"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "new_geo_login",
+      "match": {
+        "user": "pwong"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "credential_stuffing",
+        "new_geo_login"
+      ],
+      "label": "true_positive",
+      "risk_min": 75,
+      "expect_actions": {
+        "block_ip": "execute",
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

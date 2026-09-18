@@ -8,6 +8,23 @@
         "user": "mgarcia",
         "source_ip": "45.83.140.6"
       },
+      "label": "true_positive"
+    },
+    {
+      "rule": "new_geo_login",
+      "match": {
+        "user": "mgarcia",
+        "geo": "DE"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "impossible_travel",
+        "new_geo_login"
+      ],
       "label": "true_positive",
       "risk_min": 60,
       "expect_actions": {

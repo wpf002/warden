@@ -62,8 +62,22 @@ playbook in the knowledge base and a labeled fixture in `data/eval/`.
 |---|---|---|
 | `brute_force` | T1110.001 | many failures from one IP against few accounts |
 | `password_spray` | T1110.003 | 5+ distinct accounts failing from one IP in the window, few tries each |
-| `impossible_travel` | T1078 | two successes for one user from geos no one could travel between |
-| `mfa_fatigue` | T1621 | a run of denied/timed-out MFA pushes, scored higher if an approval follows |
+| `credential_stuffing` | T1110.004 | many accounts, many IPs, few tries per IP, shared user agent or /24 |
+| `lockout_storm` | T1110 | 5+ accounts locked out within 15 minutes |
+| `mfa_fatigue` | T1621 | run of denied/timed-out MFA pushes, scored higher if an approval follows |
+| `mfa_method_change` | T1556.006 | new MFA factor within an hour of failures, denials, or an unfamiliar country |
+| `impossible_travel` | T1078 | two successes for one user from places no one could travel between (coordinates when the source has them) |
+| `new_geo_login` | T1078 | first-seen country for a user with enough history; asset tier weights it |
+| `dormant_account` | T1078 | success on an account idle 60+ days |
+| `service_account_interactive` | T1078.002 | svc-*/sa-* account with an interactive or RDP logon |
+| `session_anomaly` | T1550.004 | one session id from a second IP and a different client |
+| `privileged_group_add` | T1098, T1078.004 | add to Domain Admins, Global Administrator, Okta Super Admins, ... |
+| `account_create_then_privilege` | T1136 | new account made privileged within an hour |
+| `password_reset_abuse` | T1098 | 3+ resets of one account, or one operator resetting 3+ accounts |
+
+Alerts that share a user or IP within two hours are merged by `warden/correlate.py` into
+one incident, and the model analyzes the incident: "spray -> success -> new MFA factor ->
+Domain Admins" is one case with one timeline.
 
 ```bash
 python -m warden.cli detections            # list the registry
@@ -99,17 +113,17 @@ should decide. Reported: detection precision/recall/F1 per rule, risk-score cali
 (Brier against the TP/FP labels), action-decision agreement with the analyst, and
 retrieval hit rate. Regenerate the fixtures with `python scripts/make_eval_fixtures.py`.
 
-Current numbers on the six shipped fixtures (mock analyzer, hash embeddings):
+Current numbers (16 synthetic cases, mock analyzer, MiniLM embeddings; `--real` runs 4 real Windows recordings):
 
-| Metric | Value |
-|---|---|
-| Detection precision / recall / F1 | 1.000 / 1.000 / 1.000 |
-| Risk calibration (Brier, lower better) | 0.037 |
-| Action agreement with analyst | 1.000 (16/16) |
-| Retrieval hit rate (playbook in top 3) | 1.000 (5/5) |
+| Metric | Synthetic | Real |
+|---|---|---|
+| Detection precision / recall | 1.000 / 1.000 (25 alerts, 14 rules) | 1.000 / 1.000 (3 alerts) |
+| Incidents merged as one | 8/8 | 1/1 |
+| Action agreement with analyst | 43/43 | 4/5 |
+| Retrieval hit rate (playbook in top 3) | 14/14 hybrid, 13/14 vector only | 2/2 |
 
-The harness earns its keep: indexing ATT&CK dropped retrieval hit rate from 1.00 to 0.40
-before the metadata filter in `retrieve_for_alert` fixed it. Nothing else would have caught that.
+The mock analyzer's risk scores are placeholders; calibration numbers that mean
+anything come from running the suite against Claude.
 
 ## Knowledge base
 

@@ -1,0 +1,35 @@
+{
+  "name": "spray that overshoots the lockout threshold",
+  "description": "Seven accounts, two failures each, all locked out, one external source.",
+  "alerts": [
+    {
+      "rule": "password_spray",
+      "match": {
+        "source_ip": "203.0.113.77"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "lockout_storm",
+      "match": {
+        "source_ip": "203.0.113.77"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "password_spray",
+        "lockout_storm"
+      ],
+      "label": "true_positive",
+      "risk_min": 70,
+      "expect_actions": {
+        "block_ip": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

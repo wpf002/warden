@@ -1,0 +1,35 @@
+{
+  "name": "new account in Domain Admins eight minutes after creation",
+  "description": "it-admin creates support2 and makes it a domain admin. No ticket.",
+  "alerts": [
+    {
+      "rule": "account_create_then_privilege",
+      "match": {
+        "user": "support2"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "privileged_group_add",
+      "match": {
+        "user": "support2"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "account_create_then_privilege",
+        "privileged_group_add"
+      ],
+      "label": "true_positive",
+      "risk_min": 85,
+      "expect_actions": {
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

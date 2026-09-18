@@ -1,0 +1,51 @@
+{
+  "name": "spray -> success -> new MFA factor -> Domain Admins",
+  "description": "The chain the roadmap asks correlation to merge into one incident.",
+  "alerts": [
+    {
+      "rule": "password_spray",
+      "match": {
+        "source_ip": "198.51.100.23"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "new_geo_login",
+      "match": {
+        "user": "jlee"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "mfa_method_change",
+      "match": {
+        "user": "jlee"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "privileged_group_add",
+      "match": {
+        "user": "jlee"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "password_spray",
+        "mfa_method_change",
+        "privileged_group_add"
+      ],
+      "label": "true_positive",
+      "risk_min": 90,
+      "expect_actions": {
+        "block_ip": "execute",
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

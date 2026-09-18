@@ -1,0 +1,19 @@
+{
+  "name": "first login from the UK, same laptop, nothing else",
+  "description": "rkhan is on a business trip. Same device fingerprint, no failures, no follow-on activity.",
+  "alerts": [
+    {
+      "rule": "new_geo_login",
+      "match": {
+        "user": "rkhan"
+      },
+      "label": "false_positive",
+      "risk_max": 60,
+      "expect_actions": {
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ],
+  "history": "history.jsonl"
+}

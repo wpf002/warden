@@ -41,10 +41,11 @@ def test_events_are_stored_once(world):
 
 def test_case_round_trip_and_filters(world):
     events, kb, store = world
-    for a in detect(events):
+    alerts = detect(events)
+    for a in alerts:
         run_alert(a, kb, MockAnalyzer(), store)
     all_cases = store.all()
-    assert len(all_cases) == 4
+    assert len(all_cases) == len(alerts)
     assert {c.alert.rule for c in store.all(rule="mfa_fatigue")} == {"mfa_fatigue"}
     assert all(c.status == "awaiting_approval" for c in store.all(status="awaiting_approval"))
     c = all_cases[0]

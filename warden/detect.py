@@ -14,9 +14,9 @@ from .events import Event
 from .models import Alert
 
 
-def detect(events: list[Event], only: list[str] | None = None) -> list[Alert]:
+def detect(events: list[Event], only: list[str] | None = None, prior: list[Event] | None = None) -> list[Alert]:
     """Run every enabled detection over the events it declares an appetite for."""
-    return run_all(events, only=only)
+    return run_all(events, only=only, prior=prior)
 
 
 def detect_brute_force(events, threshold: int | None = None, window_sec: int | None = None) -> list[Alert]:
