@@ -131,7 +131,8 @@ class KnowledgeBase:
         drop chunks of deleted ones. Cheap when nothing changed (hash comparison only)."""
         path = path or settings.knowledge_dir
         on_disk = {f.stem: hashlib.sha1(f.read_text().encode()).hexdigest()[:12] for f in path.glob("*.md")}
-        got = self.col.get(where={"kind": {"$ne": "attack"}}, include=["metadatas"])
+        # ATT&CK and intel docs come from feeds, not from markdown on disk; sync leaves them alone
+        got = self.col.get(where={"kind": {"$nin": ["attack", "intel"]}}, include=["metadatas"])
         indexed: dict[str, set[str]] = {}
         chunk_ids: dict[str, list[str]] = {}
         for i, m in zip(got["ids"], got["metadatas"]):
@@ -163,6 +164,25 @@ class KnowledgeBase:
         h.update(str(m.get("attack_version", "")).encode())
         self._snapshot = "kb-" + h.hexdigest()[:12]
         return self._snapshot
+
+    def record_snapshot(self, engine=None) -> str:
+        """Persist what this snapshot id stands for, so a case analyzed against it can be
+        traced to exact document versions, the ATT&CK release, and intel feed sizes."""
+        from sqlalchemy import func, insert, select
+
+        from . import db
+        from .attack import manifest
+        sid = self.snapshot_id()
+        eng = engine or db.engine()
+        got = self.col.get(where={"kind": {"$nin": ["attack", "intel"]}}, include=["metadatas"])
+        docs = {m["doc"]: m.get("sha", "") for m in got["metadatas"]}
+        with eng.begin() as c:
+            if c.execute(select(db.kb_snapshots.c.id).where(db.kb_snapshots.c.id == sid)).first():
+                return sid
+            intel = dict(c.execute(select(db.iocs.c.source, func.count()).group_by(db.iocs.c.source)).all())
+            c.execute(insert(db.kb_snapshots).values(id=sid, ts=db.now(), detail={
+                "docs": docs, "attack": manifest() or {}, "intel_iocs": intel, "chunks": self.col.count()}))
+        return sid
 
     def invalidate(self) -> None:
         self._snapshot = None
@@ -269,5 +289,5 @@ class KnowledgeBase:
         # playbooks first so the mapped playbook lands high; the case pass fills what's left
         take(self.retrieve(ops_q, k, where={"kind": {"$in": ["playbook", "policy", "mitre"]}}), k - n_cases)
         take(self.retrieve(case_q, k, where={"kind": {"$in": ["incident", "learned"]}}), k)
-        take(self.retrieve(ops_q, k, where={"kind": {"$ne": "attack"}}), k)
+        take(self.retrieve(ops_q, k, where={"kind": {"$nin": ["attack", "intel"]}}), k)
         return out

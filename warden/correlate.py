@@ -19,13 +19,21 @@ from .detections._identity import norm_user
 from .models import Alert
 
 TIER = {"crown_jewel": 2, "standard": 1}
-MAX_KEYED_USERS = 10   # alerts naming more users than this (sprays, lockout storms) link by IP only
+MAX_KEYED_USERS = 10   # alerts naming more users than this link by IP only
+# For these rules the listed users are the *targets* of a wide attack, not people whose
+# accounts were taken. Only the accounts that actually succeeded link them to anything.
+WIDE_TARGET_RULES = {"password_spray", "credential_stuffing", "lockout_storm"}
+
+
+def pivot_users(a: Alert) -> list[str]:
+    if a.rule in WIDE_TARGET_RULES:
+        return list(a.detail.get("succeeded_users") or [])
+    return a.users if len(a.users) <= MAX_KEYED_USERS else []
 
 
 def _keys(a: Alert) -> set[str]:
     keys = {f"ip:{ip}" for ip in a.all_ips() if ip and ip not in settings.ip_safelist}
-    if len(a.users) <= MAX_KEYED_USERS:
-        keys |= {f"user:{norm_user(u)}" for u in a.users if u}
+    keys |= {f"user:{norm_user(u)}" for u in pivot_users(a) if u}
     return keys
 
 
@@ -75,7 +83,7 @@ def build_incident(members: list[Alert]) -> Alert:
     users = list(dict.fromkeys(u for m in members for u in m.users))
     chain = list(dict.fromkeys(m.rule for m in members))
     mitre = list(dict.fromkeys(t for m in members for t in m.mitre))
-    focus = Counter(norm_user(u) for m in members for u in m.users if len(m.users) <= MAX_KEYED_USERS).most_common(1)
+    focus = Counter(norm_user(u) for m in members for u in pivot_users(m)).most_common(1)
     who = focus[0][0] if focus else (ips.most_common(1)[0][0] if ips else "?")
     timeline = sorted(({**e, "alert": m.id, "rule": m.rule} for m in members for e in m.evidence),
                       key=lambda e: e.get("ts", ""))

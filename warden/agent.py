@@ -21,7 +21,8 @@ class State(TypedDict):
     case: Case
 
 
-def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore):
+def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore, stats: dict | None = None):
+    stats = stats or {}
     def retrieve(state: State) -> State:
         c = state["case"]
         c.retrieved_docs = kb.retrieve_for_alert(c.alert)
@@ -36,7 +37,8 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore):
         t0 = time.monotonic()
         err = None
         try:
-            c.analysis = analyzer.analyze(c.alert, c.retrieved_docs)
+            track = [stats[r].as_prior() for r in dict.fromkeys(c.alert.rules()) if r in stats]
+            c.analysis = analyzer.analyze(c.alert, c.retrieved_docs, {"track_record": track})
         except Exception as e:  # noqa: BLE001 - logged, then re-raised
             err = f"{type(e).__name__}: {e}"
             raise
@@ -53,7 +55,9 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore):
 
     def guardrail(state: State) -> State:
         c = state["case"]
-        decisions = guardrails.evaluate(c.alert, c.analysis)
+        from .stats import threshold_bump
+        bump = max((threshold_bump(stats.get(r)) for r in c.alert.rules()), default=0)
+        decisions = guardrails.evaluate(c.alert, c.analysis, bump=bump)
         c.guardrail_log = [d.log_line() for d in decisions]
         c.actions = []
         for d in decisions:
@@ -85,7 +89,7 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore):
     return g.compile()
 
 
-def run_alert(alert: Alert, kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore) -> Case:
-    graph = build_graph(kb, analyzer, store)
+def run_alert(alert: Alert, kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore, stats: dict | None = None) -> Case:
+    graph = build_graph(kb, analyzer, store, stats)
     out = graph.invoke({"case": Case(alert=alert, incident_id=alert.id if alert.is_incident else None)})
     return out["case"]

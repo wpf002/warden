@@ -34,7 +34,25 @@ def _format_context(docs: list[dict]) -> str:
 
 
 class Analyzer(Protocol):
-    def analyze(self, alert: Alert, docs: list[dict]) -> Analysis: ...
+    def analyze(self, alert: Alert, docs: list[dict], context: dict | None = None) -> Analysis: ...
+
+
+def _track(context: dict | None) -> str:
+    rec = (context or {}).get("track_record") or []
+    return json.dumps(rec, indent=1) if rec else "(no analyst verdicts yet)"
+
+
+def _alert_json(alert: Alert) -> str:
+    """The alert as the model sees it. Incidents carry compact member summaries and the
+    merged timeline instead of every member's full evidence."""
+    if alert.is_incident:
+        body = alert.model_dump(mode="json", exclude={"evidence", "members"})
+        body["members"] = [{"id": m.id, "rule": m.rule, "title": m.title, "mitre": m.mitre,
+                            "first_seen": m.first_seen.isoformat(), "detail": m.detail} for m in alert.members]
+        body["timeline"] = alert.evidence[:40]
+        return json.dumps(body, indent=2, default=str)
+    return alert.model_dump_json(indent=2, exclude={"evidence", "members"}) + \
+        f"\nevidence_sample: {json.dumps(alert.evidence[:12])}"
 
 
 class AnthropicAnalyzer:
@@ -57,11 +75,11 @@ class AnthropicAnalyzer:
         self.effort = effort or settings.effort
         self.last_usage: dict = {}
 
-    def analyze(self, alert: Alert, docs: list[dict]) -> Analysis:
+    def analyze(self, alert: Alert, docs: list[dict], context: dict | None = None) -> Analysis:
         user = USER_TEMPLATE.format(
-            alert_json=alert.model_dump_json(indent=2, exclude={"evidence"})
-            + f"\nevidence_sample: {json.dumps(alert.evidence[:12])}",
+            alert_json=_alert_json(alert),
             context=_format_context(docs),
+            track_record=_track(context),
         )
         resp = self.client.beta.messages.parse(
             model=self.model,
@@ -92,10 +110,17 @@ class MockAnalyzer:
     model = "mock"
     last_usage: dict = {}
 
-    def analyze(self, alert: Alert, docs: list[dict]) -> Analysis:
-        if alert.is_incident:
-            return self._incident(alert, docs)
-        return self._single(alert, docs)
+    def analyze(self, alert: Alert, docs: list[dict], context: dict | None = None) -> Analysis:
+        an = self._incident(alert, docs) if alert.is_incident else self._single(alert, docs)
+        # a rule analysts keep rejecting gets its score pulled down, as the real prompt asks the model to do
+        recs = {r["rule"]: r for r in (context or {}).get("track_record", [])}
+        worst = max((r.get("false_positive_rate_30d") or 0 for r in recs.values()
+                     if (r.get("analyst_verdicts_30d") or 0) >= settings.fp_prior_min_verdicts), default=0)
+        if worst >= 0.5:
+            an.risk_score = max(0, an.risk_score - int(30 * worst))
+            an.false_positive_likelihood = "high"
+            an.explanation += f" Analysts rejected {worst:.0%} of this rule's recent alerts."
+        return an
 
     # rule -> (technique, risk, severity, fp likelihood, actions). Mirrors the playbooks.
     TABLE = {

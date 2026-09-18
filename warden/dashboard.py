@@ -75,6 +75,7 @@ def index(user: User = Depends(require("viewer"))):
       <span class=kpi><b>{len(cases)}</b>alerts</span><span class=kpi><b>{n_open}</b>open</span>
       <span class=kpi><b>{n_pending}</b>awaiting approval</span><span class=kpi><b>{n_exec}</b>actions executed</span>
       <span class=kpi><b>{n_tp}/{n_fp}</b>TP / FP</span>
+      <a href=/detections>detections</a> · <a href=/exclusions>exclusions</a> · <a href=/audit>audit</a>
       <form method=post action=/run style='float:right'><button>Run pipeline</button></form>
       <form method=post action=/reindex style='float:right'><button class=secondary>Reindex KB</button></form>
     </div>
@@ -101,9 +102,14 @@ def case_view(alert_id: str, user: User = Depends(require("viewer"))):
                    f"<div class=mono>{html.escape(d['text'][:600])}</div></div>" for d in c.retrieved_docs)
     recs = "".join(f"<li><b>{x.action}</b> {html.escape(x.target)} <span style='color:#9fb3d1'>{html.escape(x.reason)}</span></li>"
                    for x in (an.recommended_actions if an else []))
-    verdict = (f"<p>Analyst verdict: <b>{c.analyst_verdict}</b> {html.escape(c.analyst_note)}</p>" if c.analyst_verdict else
+    from .stats import FP_REASONS
+    reasons = "".join(f"<option value={k}>{html.escape(v)}</option>" for k, v in FP_REASONS.items())
+    verdict = (f"<p>Analyst verdict: <b>{c.analyst_verdict}</b> {html.escape(c.analyst_reason)} {html.escape(c.analyst_note)}</p>"
+               if c.analyst_verdict else
                f"<form method=post action='/case/{a.id}/verdict'><input type=text name=note placeholder='note (optional)'> "
-               f"<button name=verdict value=true_positive>True positive</button>"
+               f"<button name=verdict value=true_positive>True positive</button><br><br>"
+               f"<select name=reason><option value=''>FP reason...</option>{reasons}</select> "
+               f"<label><input type=checkbox name=suppress value=1> mute this rule for this entity for 30 days</label> "
                f"<button name=verdict value=false_positive class=secondary>False positive</button></form>")
     body = f"""
     <p><a href=/>&larr; alerts</a></p>
@@ -161,12 +167,15 @@ def deny(alert_id: str, idx: int, user: User = Depends(require("analyst"))):
 
 
 @app.post("/case/{alert_id}/verdict")
-def verdict(alert_id: str, verdict: str = Form(...), note: str = Form(""),
-            user: User = Depends(require("analyst"))):
+def verdict(alert_id: str, verdict: str = Form(...), note: str = Form(""), reason: str = Form(""),
+            suppress: str = Form(""), user: User = Depends(require("analyst"))):
     if verdict not in ("true_positive", "false_positive"):
         raise HTTPException(422, "verdict must be true_positive or false_positive")
     c = store.get(alert_id) or _404()
-    feedback.record_verdict(c, verdict, note, store, _kb(), actor=user.name)
+    try:
+        feedback.record_verdict(c, verdict, note, store, _kb(), actor=user.name, reason=reason, suppress=bool(suppress))
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
     return RedirectResponse(f"/case/{alert_id}", status_code=303)
 
 
@@ -201,6 +210,42 @@ async def hec_event(request: Request):
             out.append(e)
     added = store.add_events(normalize(out))
     return {"text": "Success", "code": 0, "accepted": len(out), "stored": added}
+
+
+@app.get("/detections", response_class=HTMLResponse)
+def detections_view(user: User = Depends(require("viewer"))):
+    from .detect import load_all
+    from .stats import detection_stats, threshold_bump
+    st = detection_stats(store)
+    rows = ""
+    for d in sorted(load_all().values(), key=lambda d: d.id):
+        s = st.get(d.id)
+        spark = " ".join(str(w["fired"]) for w in s.weekly) if s else ""
+        fpr = f"{s.fp_rate:.0%}" if s and s.fp_rate is not None else "-"
+        rows += (f"<tr><td>{d.id}</td><td>{', '.join(d.mitre)}</td><td>{s.fired if s else 0}</td>"
+                 f"<td>{s.tp if s else 0}</td><td>{s.fp if s else 0}</td><td>{fpr}</td>"
+                 f"<td>{'+' + str(threshold_bump(s)) if threshold_bump(s) else ''}</td>"
+                 f"<td>{html.escape(', '.join(s.fp_reasons)) if s else ''}</td><td class=mono>{spark}</td></tr>")
+    return _page("Detections", "<p><a href=/>&larr; alerts</a></p><h1>Detection health (30 days)</h1>"
+                 "<table><tr><th>Rule</th><th>MITRE</th><th>Fired</th><th>TP</th><th>FP</th><th>FP rate</th>"
+                 f"<th>Threshold bump</th><th>FP reasons</th><th>Weekly (oldest first)</th></tr>{rows}</table>")
+
+
+@app.get("/exclusions", response_class=HTMLResponse)
+def exclusions_view(user: User = Depends(require("viewer"))):
+    rows = "".join(
+        f"<tr><td>#{e['id']}</td><td>{e['rule']}</td><td>{e['field']}={html.escape(e['value'])}</td><td>{e['reason']}</td>"
+        f"<td>{html.escape(e['created_by'] or '')}</td><td>{e['expires']:%Y-%m-%d}</td><td>{e['hits']}</td>"
+        f"<td><form method=post action='/exclusions/{e['id']}/expire'><button class=secondary>Expire</button></form></td></tr>"
+        for e in store.exclusions())
+    return _page("Exclusions", "<p><a href=/>&larr; alerts</a></p><h1>Active exclusions</h1><table><tr><th>Id</th>"
+                 f"<th>Rule</th><th>Entity</th><th>Reason</th><th>By</th><th>Expires</th><th>Hits</th><th></th></tr>{rows}</table>")
+
+
+@app.post("/exclusions/{ex_id}/expire")
+def expire_exclusion(ex_id: int, user: User = Depends(require("analyst"))):
+    store.expire_exclusion(ex_id, user.name)
+    return RedirectResponse("/exclusions", status_code=303)
 
 
 @app.get("/audit", response_class=HTMLResponse)

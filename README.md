@@ -128,17 +128,30 @@ anything come from running the suite against Claude.
 ## Knowledge base
 
 Playbooks, policies, past incidents, and learned cases live in `data/knowledge/` as
-markdown and are reviewed like code. On top of that:
+markdown and are reviewed like code. The index follows the files by content hash.
 
 ```bash
-python -m warden.cli attack-ingest         # ~700 techniques, ~4,400 chunks, ~50MB download
-python -m warden.cli attack-ingest --file enterprise-attack.json   # offline
+python -m warden.cli refresh          # nightly: ATT&CK + intel feeds + KB sync + snapshot
 ```
 
-ATT&CK is reference material, not a general search corpus, so it is reachable only
-through a detection's mapped technique ids. The operational corpus gets the rest of the
-retrieval budget from an unfiltered search. Each ingest writes `data/attack/_manifest.json`
-with the ATT&CK version and object counts.
+- **ATT&CK**: ~700 techniques, reachable only through a detection's mapped technique ids.
+- **Threat intel**: CISA KEV, abuse.ch Feodo C2 IPs, Tor exits (context, low confidence),
+  AlienVault OTX with `OTX_API_KEY`. Indicators go to an exact-match `iocs` table and are
+  attached to alerts as `detail.intel`; descriptive context goes to the KB.
+- **Retrieval**: BM25 + vector with reciprocal rank fusion, three passes (ATT&CK by
+  technique, playbooks by what the detection is, past cases by entities).
+- **Snapshots**: every case records the KB snapshot id it was analyzed against; the
+  `kb_snapshots` table maps it to document hashes, the ATT&CK release, and intel sizes.
+  `warden replay <case>` re-sends a case's recorded inputs and diffs the outputs.
+
+### Feedback that changes behavior
+
+A false-positive verdict takes a structured reason (known scanner, change window, service
+account, travel, test, misconfiguration). Per-rule FP rates appear on `/detections`, go into
+the prompt as the rule's track record, and raise that rule's auto-execute threshold by up to
+20 once it has `WARDEN_FP_PRIOR_MIN_VERDICTS` verdicts. "Mute" creates a 30-day exclusion
+for that rule on that user or IP; muted alerts are stored, not analyzed. An incident is
+muted only if every step in it is.
 
 ## Layout
 

@@ -94,6 +94,58 @@ def cmd_hash_password(a):
     print(hash_password(pw))
 
 
+def cmd_refresh(a):
+    """Nightly job: ATT&CK, intel feeds, KB sync, snapshot. Safe to run unattended; a
+    failing source is reported and skipped. Exit 1 only if every source failed."""
+    import json as _json
+    from . import intel
+    from .attack import ingest
+    from .knowledge import KnowledgeBase
+
+    kb = KnowledgeBase()
+    synced = kb.sync()
+    report: dict = {"kb": {"reembedded": len(synced["indexed"]), "removed": len(synced["removed"])}}
+    if not a.skip_attack:
+        try:
+            n_tech, n_chunks = ingest(kb=kb)
+            report["attack"] = {"techniques": n_tech, "chunks": n_chunks}
+        except Exception as e:  # noqa: BLE001
+            report["attack"] = {"error": f"{type(e).__name__}: {e}"}
+    if not a.skip_intel:
+        report["intel"] = intel.refresh(kb=kb)
+    report["snapshot"] = kb.record_snapshot()
+    print(_json.dumps(report, indent=2, default=str))
+    sources = [report.get("attack", {})] + list(report.get("intel", {}).values())
+    if sources and all("error" in x for x in sources if x):
+        raise SystemExit(1)
+
+
+def cmd_replay(a):
+    """Re-send a case's exact inputs (alert, retrieved text, prompt) and compare outputs."""
+    from .llm import PROMPT_VERSION, get_analyzer
+    from .stats import detection_stats
+    from .store import CaseStore
+
+    store = CaseStore()
+    c = store.get(a.case_id)
+    if not c or not c.analysis:
+        raise SystemExit(f"no analyzed case {a.case_id}")
+    if c.prompt_version != PROMPT_VERSION:
+        print(f"note: case used {c.prompt_version}, current prompt is {PROMPT_VERSION}; "
+              f"check out the matching commit for an exact replay")
+    stats = detection_stats(store)
+    track = [stats[r].as_prior() for r in dict.fromkeys(c.alert.rules()) if r in stats]
+    new = get_analyzer().analyze(c.alert, c.retrieved_docs, {"track_record": track})
+    old = c.analysis
+    rows = [("risk", old.risk_score, new.risk_score), ("severity", old.severity, new.severity),
+            ("fp likelihood", old.false_positive_likelihood, new.false_positive_likelihood),
+            ("actions", sorted(f"{x.action}:{x.target}" for x in old.recommended_actions),
+             sorted(f"{x.action}:{x.target}" for x in new.recommended_actions))]
+    print(f"replay {c.alert.id}  kb {c.kb_snapshot}  prompt {c.prompt_version}  model {c.model}")
+    for name, o, n in rows:
+        print(f"  {'=' if o == n else '!'} {name:14} {o}  ->  {n}")
+
+
 def cmd_serve(a):
     import uvicorn
     uvicorn.run("warden.dashboard:app", host=a.host, port=a.port, reload=False)
@@ -138,6 +190,15 @@ def main(argv=None):
     ai.add_argument("--file", default=None, help="use a local bundle instead of downloading")
     ai.add_argument("--no-index", action="store_true", help="write docs to disk but skip embedding")
     ai.set_defaults(fn=cmd_attack_ingest)
+
+    rf = sub.add_parser("refresh", help="nightly: ATT&CK + intel feeds + KB sync + snapshot")
+    rf.add_argument("--skip-attack", action="store_true")
+    rf.add_argument("--skip-intel", action="store_true")
+    rf.set_defaults(fn=cmd_refresh)
+
+    rp = sub.add_parser("replay", help="re-run a case's analysis on its recorded inputs and diff")
+    rp.add_argument("case_id")
+    rp.set_defaults(fn=cmd_replay)
 
     hp = sub.add_parser("hash-password", help="hash a password for WARDEN_USERS")
     hp.add_argument("--password", default=None, help="omit to be prompted")

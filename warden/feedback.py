@@ -36,21 +36,39 @@ def deny_action(case: Case, idx: int, store: CaseStore, actor: str = "system") -
 
 
 def record_verdict(case: Case, verdict: str, note: str, store: CaseStore, kb: KnowledgeBase,
-                   actor: str = "system") -> Case:
+                   actor: str = "system", reason: str = "", suppress: bool = False) -> Case:
+    """Close the case with the analyst's call. A false positive can carry a structured reason
+    (stats.FP_REASONS) and, with `suppress`, mute the same rule on the same entity for
+    WARDEN_EXCLUSION_DAYS. Both feed back: the reason into retrieval and the rule's FP rate,
+    the exclusion into the pipeline."""
+    from .stats import FP_REASONS
+    if verdict not in ("true_positive", "false_positive"):
+        raise ValueError("verdict must be true_positive or false_positive")
+    if reason and reason not in FP_REASONS:
+        raise ValueError(f"unknown reason {reason!r}; use one of {sorted(FP_REASONS)}")
     case.analyst_verdict = verdict  # type: ignore[assignment]
     case.analyst_note = note
+    case.analyst_reason = reason if verdict == "false_positive" else ""
+    if suppress and verdict == "false_positive":
+        for m in (case.alert.members or [case.alert]):
+            field, values = ("user", m.users) if 0 < len(m.users) <= 3 else ("source_ip", [m.source_ip])
+            for v in filter(None, values):
+                ex = store.add_exclusion(m.rule, field, v, reason or "other", note, actor)
+                case.guardrail_log.append(f"EXCLUSION #{ex} {m.rule} {field}={v} ({reason or 'other'}) by {actor}")
     case.status = "closed"
     store.save(case)
-    store.audit(actor, "verdict", case.alert.id, verdict=verdict, note=note, rule=case.alert.rule)
+    store.audit(actor, "verdict", case.alert.id, verdict=verdict, note=note, rule=case.alert.rule,
+                reason=case.analyst_reason, suppress=suppress)
 
     # Write a learned case. This is the "update knowledge base" arrow in the diagram.
     a = case.alert
     text = (
         f"# Learned case {a.id} ({verdict.replace('_', ' ')})\n\n"
-        f"Rule {a.rule}: {a.failed_attempts} failures from {a.source_ip} (geo {a.geo}) against "
+        f"Rule {' + '.join(a.rules())}: {a.failed_attempts} failures from {a.source_ip} (geo {a.geo}) against "
         f"{', '.join(a.users)} on {', '.join(a.hosts) or 'unknown host'}"
         + (", followed by a successful login" if a.success_after_failures else "") + ".\n"
         f"Analyst verdict: {verdict.replace('_', ' ')}. "
+        + (f"Reason: {FP_REASONS[case.analyst_reason]}. " if case.analyst_reason else "")
         + (f"Note: {note}\n" if note else "\n")
         + (f"Model said risk {case.analysis.risk_score}, severity {case.analysis.severity}.\n" if case.analysis else "")
         + f"Recorded {datetime.now(timezone.utc).date().isoformat()}.\n"

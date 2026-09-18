@@ -16,7 +16,8 @@ class Decision:
         return f"{self.verdict.upper():8} {self.action.action}({self.action.target}): {self.why}"
 
 
-def evaluate(alert: Alert, analysis: Analysis) -> list[Decision]:
+def evaluate(alert: Alert, analysis: Analysis, bump: int = 0) -> list[Decision]:
+    """`bump` raises the auto-execute threshold for rules analysts keep marking FP (stats.threshold_bump)."""
     out: list[Decision] = []
     for a in analysis.recommended_actions:
         if a.action in NO_OP:
@@ -44,9 +45,10 @@ def evaluate(alert: Alert, analysis: Analysis) -> list[Decision]:
         if analysis.false_positive_likelihood == "high":
             out.append(Decision(a, "approve", "model flagged high false-positive likelihood"))
             continue
-        threshold = settings.rule_thresholds.get(alert.rule, settings.auto_action_min_risk)
+        threshold = settings.rule_thresholds.get(alert.rule, settings.auto_action_min_risk) + bump
+        why = f"{alert.rule} threshold" + (f", +{bump} for its false-positive record" if bump else "")
         if analysis.risk_score >= threshold:
-            out.append(Decision(a, "execute", f"risk {analysis.risk_score} >= {threshold} ({alert.rule} threshold)"))
+            out.append(Decision(a, "execute", f"risk {analysis.risk_score} >= {threshold} ({why})"))
         else:
-            out.append(Decision(a, "approve", f"risk {analysis.risk_score} < {threshold} ({alert.rule} threshold)"))
+            out.append(Decision(a, "approve", f"risk {analysis.risk_score} < {threshold} ({why})"))
     return out

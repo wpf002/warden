@@ -39,6 +39,9 @@ class Settings:
     analyst_group: str = field(default_factory=lambda: _env("WARDEN_ANALYST_GROUP", "soc-analysts"))
     admin_group: str = field(default_factory=lambda: _env("WARDEN_ADMIN_GROUP", "soc-admins"))
 
+    fp_prior_min_verdicts: int = field(default_factory=lambda: int(_env("WARDEN_FP_PRIOR_MIN_VERDICTS", "10")))
+    exclusion_days: int = field(default_factory=lambda: int(_env("WARDEN_EXCLUSION_DAYS", "30")))
+    otx_api_key: str = field(default_factory=lambda: _env("OTX_API_KEY", ""))
     hec_token: str = field(default_factory=lambda: _env("WARDEN_HEC_TOKEN", ""))
 
     # detection tuning

@@ -90,6 +90,43 @@ llm_calls = Table(
 )
 
 
+iocs = Table(
+    "iocs", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("type", String(16), nullable=False),          # ip | domain | url | sha256 | cve
+    Column("value", String(512), nullable=False),
+    Column("source", String(64), nullable=False),
+    Column("confidence", Integer),                         # 0-100
+    Column("tags", JSON),
+    Column("first_seen", DateTime(timezone=True)),
+    Column("last_seen", DateTime(timezone=True)),
+    Column("updated", DateTime(timezone=True)),
+    UniqueConstraint("type", "value", "source", name="uq_iocs"),
+)
+
+kb_snapshots = Table(
+    "kb_snapshots", metadata,
+    Column("id", String(32), primary_key=True),
+    Column("ts", DateTime(timezone=True), index=True),
+    Column("detail", JSON),
+)
+
+exclusions = Table(
+    "exclusions", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("tenant", String(64), nullable=False, default="default", index=True),
+    Column("rule", String(64), index=True),
+    Column("field", String(32)),                           # user | source_ip | host
+    Column("value", String(256)),
+    Column("reason", String(64)),
+    Column("note", Text),
+    Column("created_by", String(256)),
+    Column("created", DateTime(timezone=True)),
+    Column("expires", DateTime(timezone=True)),
+    Column("hits", Integer, default=0),
+)
+
+
 def _url() -> str:
     if settings.database_url:
         return settings.database_url

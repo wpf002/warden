@@ -114,3 +114,32 @@ class CaseStore:
             q = q.where(db.llm_calls.c.subject_id == subject_id)
         with self.engine.connect() as c:
             return [dict(r._mapping) for r in c.execute(q)]
+
+    # ---------------------------------------------------------------- exclusions
+    def add_exclusion(self, rule: str, field: str, value: str, reason: str, note: str = "",
+                      actor: str = "system", days: int | None = None) -> int:
+        from datetime import timedelta
+        days = days if days is not None else settings.exclusion_days
+        with self.engine.begin() as c:
+            r = c.execute(insert(db.exclusions).values(
+                tenant=self.tenant, rule=rule, field=field, value=value, reason=reason, note=note,
+                created_by=actor, created=db.now(), expires=db.now() + timedelta(days=days), hits=0))
+            return r.inserted_primary_key[0]
+
+    def exclusions(self, active_only: bool = True) -> list[dict]:
+        q = select(db.exclusions).where(db.exclusions.c.tenant == self.tenant).order_by(db.exclusions.c.id.desc())
+        if active_only:
+            q = q.where(db.exclusions.c.expires > db.now())
+        with self.engine.connect() as c:
+            return [dict(r._mapping) for r in c.execute(q)]
+
+    def exclusion_hit(self, ex_id: int) -> None:
+        with self.engine.begin() as c:
+            c.execute(update(db.exclusions).where(db.exclusions.c.id == ex_id)
+                      .values(hits=db.exclusions.c.hits + 1))
+
+    def expire_exclusion(self, ex_id: int, actor: str) -> None:
+        with self.engine.begin() as c:
+            c.execute(update(db.exclusions).where(db.exclusions.c.id == ex_id, db.exclusions.c.tenant == self.tenant)
+                      .values(expires=db.now()))
+        self.audit(actor, "expire_exclusion", str(ex_id))
