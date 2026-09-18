@@ -123,11 +123,22 @@ class EvalCase:
         )
 
 
-def discover(root: Path | None = None) -> list[EvalCase]:
+def discover(root: Path | None = None, skip_missing: bool = False) -> list[EvalCase]:
+    """`skip_missing` drops cases whose event file is absent (real samples not fetched)
+    instead of failing; the sandbox uses it, the CLI does not."""
     root = root or settings.eval_dir
     if not root.exists():
         return []
-    return [EvalCase.load(d) for d in sorted(root.iterdir()) if (d / "expected.json").exists()]
+    out = []
+    for d in sorted(root.iterdir()):
+        if not (d / "expected.json").exists():
+            continue
+        try:
+            out.append(EvalCase.load(d))
+        except FileNotFoundError:
+            if not skip_missing:
+                raise
+    return out
 
 
 # ---------------------------------------------------------------- scoring
