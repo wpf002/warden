@@ -113,3 +113,46 @@ def test_sshd_year_rollover(tmp_path):
     assert b.ts.year == a.ts.year + 1 and b.ts > a.ts
     assert b.ts <= datetime.now(timezone.utc).replace(year=datetime.now().year + 1)
     assert a.ts < datetime.now(timezone.utc)
+
+
+def test_crowdstrike_fdr_and_streaming(tmp_path):
+    import json
+    from warden.adapters import detect_format
+    from warden.ingest import load_file
+    f = tmp_path / "falcon.json"
+    fdr = [
+        {"event_simpleName": "ProcessRollup2", "ContextTimeStamp": "1758466867.856", "ComputerName": "WS-01",
+         "UserName": "alice", "ImageFileName": "\\Device\\HarddiskVolume3\\Windows\\System32\\cmd.exe",
+         "CommandLine": "cmd.exe /c whoami", "ParentBaseFileName": "winword.exe", "RawProcessId": "4242"},
+        {"event_simpleName": "UserLogonFailed2", "timestamp": "1758466868000", "ComputerName": "WS-01",
+         "UserName": "bob", "LogonType": "10", "RemoteAddressIP4": "203.0.113.9"},
+        {"event_simpleName": "UserAccountAddedToGroup", "timestamp": "1758466869000", "aid": "abc",
+         "UserName": "eve", "GroupRid": "512"},
+        {"event_simpleName": "SensorHeartbeat", "timestamp": "1758466869000"},
+    ]
+    stream = {"metadata": {"customerIDString": "x", "eventType": "DetectionSummaryEvent", "eventCreationTime": 1686845212400},
+              "event": {"ComputerName": "WS-02", "UserName": "carol", "FileName": "mimikatz.exe", "FilePath": "\\Temp",
+                        "CommandLine": "mimikatz.exe sekurlsa::logonpasswords", "Tactic": "Credential Access",
+                        "SeverityName": "Critical", "ProcessStartTime": 1686845212}}
+    f.write_text("\n".join(json.dumps(r) for r in fdr) + "\n" + json.dumps(stream, indent=2))
+    assert detect_format(f) == "crowdstrike"
+    evs = sorted(load_file(f), key=lambda e: e.kind)
+    by = {e.kind: e for e in evs}
+    assert len(evs) == 4
+    assert by["auth"].event_type == "login_failure" and by["auth"].logon_type == "remote_interactive"
+    assert by["auth"].source_ip == "203.0.113.9"
+    assert by["identity"].change_type == "group_add" and by["identity"].target_user == "eve"
+    procs = {e.process_name: e for e in evs if e.kind == "process"}
+    assert procs["cmd.exe"].parent_name == "winword.exe" and procs["cmd.exe"].pid == 4242
+    assert procs["mimikatz.exe"].raw["falcon_detection"]["Tactic"] == "Credential Access"
+
+
+def test_crowdstrike_real_samples():
+    import pytest
+    from pathlib import Path
+    from warden.ingest import load_file
+    d = Path(__file__).resolve().parents[1] / "data" / "real" / "crowdstrike"
+    if not d.exists():
+        pytest.skip("run scripts/fetch_crowdstrike_samples.py")
+    kinds = {e.kind for f in d.glob("*.log") for e in load_file(f)}
+    assert {"process", "network", "auth", "file", "identity"} <= kinds

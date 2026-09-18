@@ -327,7 +327,7 @@ def main(argv=None):
 
     r = sub.add_parser("run", help="run detection -> RAG -> LLM -> guardrails -> actions")
     r.add_argument("--log", default=None)
-    r.add_argument("--format", default=None, help="force an adapter: windows, okta, entra, cloudtrail, splunk, elastic, sshd, generic")
+    r.add_argument("--format", default=None, help="force an adapter: windows, crowdstrike, okta, entra, cloudtrail, splunk, elastic, sshd, generic")
     r.add_argument("--rerun", action="store_true", help="re-analyze alerts that already have cases")
     r.add_argument("--detections", default=None, help="comma list, restrict which rules run")
     r.add_argument("--from-db", action="store_true", help="detect over stored events (HEC, earlier imports)")

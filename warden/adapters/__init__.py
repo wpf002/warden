@@ -20,7 +20,7 @@ from ..events import Event
 
 _ADAPTERS: dict[str, ModuleType] = {}
 # sniff order matters: specific formats before the generic JSON fallback
-ORDER = ["splunk", "windows", "okta", "entra", "cloudtrail", "o365", "zeek", "elastic", "sshd", "generic"]
+ORDER = ["splunk", "windows", "crowdstrike", "okta", "entra", "cloudtrail", "o365", "zeek", "elastic", "sshd", "generic"]
 
 
 def adapters() -> dict[str, ModuleType]:
