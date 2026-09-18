@@ -152,6 +152,8 @@ Goal: something a second person or a small company can run.
 
 Exit criteria: fresh AWS account to running Warden in under an hour from the Terraform; red-team suite green in CI; two tenants isolated in one deployment.
 
+**Status (2026-09):** red-team suite green in CI and tenant isolation done. Cloud deployment is **deferred**: the AWS Terraform (`deploy/terraform/aws`) is written and passes `terraform validate` but is not applied, because the reference stack costs about $150/month. Azure and GCP equivalents are not written; they would cost about the same. Development runs on Docker Compose locally at $0. Apply the AWS stack when a paying user needs a hosted deployment, and write Azure or GCP only when a user asks for that cloud.
+
 ---
 
 ## Phase 8: Product surface (ongoing)
