@@ -4,10 +4,14 @@ from __future__ import annotations
 import html
 from functools import lru_cache
 
-from fastapi import FastAPI, Form, HTTPException
+import hmac
+import json
+
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from . import feedback
+from .auth import User, require
 from .knowledge import KnowledgeBase
 from .llm import get_analyzer
 from .pipeline import run
@@ -48,7 +52,7 @@ def _sev(s: str) -> str:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index():
+def index(user: User = Depends(require("viewer"))):
     cases = store.all()
     n_open = sum(c.status != "closed" for c in cases)
     n_pending = sum(a.status == "pending_approval" for c in cases for a in c.actions)
@@ -78,7 +82,7 @@ def index():
 
 
 @app.get("/case/{alert_id}", response_class=HTMLResponse)
-def case_view(alert_id: str):
+def case_view(alert_id: str, user: User = Depends(require("viewer"))):
     c = store.get(alert_id)
     if not c:
         raise HTTPException(404)
@@ -129,40 +133,85 @@ def case_view(alert_id: str):
 
 
 @app.post("/run")
-def run_pipeline():
+def run_pipeline(user: User = Depends(require("analyst"))):
     run(kb=_kb(), analyzer=get_analyzer(), store=store)
     return RedirectResponse("/", status_code=303)
 
 
 @app.post("/reindex")
-def reindex():
+def reindex(user: User = Depends(require("admin"))):
     _kb().index_dir()
     return RedirectResponse("/", status_code=303)
 
 
 @app.post("/case/{alert_id}/action/{idx}/approve")
-def approve(alert_id: str, idx: int):
+def approve(alert_id: str, idx: int, user: User = Depends(require("analyst"))):
     c = store.get(alert_id) or _404()
-    feedback.approve_action(c, idx, store)
+    feedback.approve_action(c, idx, store, actor=user.name)
     return RedirectResponse(f"/case/{alert_id}", status_code=303)
 
 
 @app.post("/case/{alert_id}/action/{idx}/deny")
-def deny(alert_id: str, idx: int):
+def deny(alert_id: str, idx: int, user: User = Depends(require("analyst"))):
     c = store.get(alert_id) or _404()
-    feedback.deny_action(c, idx, store)
+    feedback.deny_action(c, idx, store, actor=user.name)
     return RedirectResponse(f"/case/{alert_id}", status_code=303)
 
 
 @app.post("/case/{alert_id}/verdict")
-def verdict(alert_id: str, verdict: str = Form(...), note: str = Form("")):
+def verdict(alert_id: str, verdict: str = Form(...), note: str = Form(""),
+            user: User = Depends(require("analyst"))):
+    if verdict not in ("true_positive", "false_positive"):
+        raise HTTPException(422, "verdict must be true_positive or false_positive")
     c = store.get(alert_id) or _404()
-    feedback.record_verdict(c, verdict, note, store, _kb())
+    feedback.record_verdict(c, verdict, note, store, _kb(), actor=user.name)
     return RedirectResponse(f"/case/{alert_id}", status_code=303)
 
 
+@app.post("/services/collector/event")
+async def hec_event(request: Request):
+    """Splunk HTTP Event Collector compatible. Point a forwarder or a Splunk HEC output here
+    with `Authorization: Splunk <WARDEN_HEC_TOKEN>`. Accepts one JSON object or several
+    concatenated, each shaped {"time":..., "sourcetype":..., "event": <str|dict>}."""
+    from .adapters.splunk import from_result
+    from .config import settings
+    from .ingest import normalize
+
+    token = request.headers.get("authorization", "")
+    if not settings.hec_token or not hmac.compare_digest(token, f"Splunk {settings.hec_token}"):
+        raise HTTPException(401, {"text": "Invalid token", "code": 4})
+    body = (await request.body()).decode("utf-8", "replace")
+    dec, i, out = json.JSONDecoder(), 0, []
+    while i < len(body):
+        while i < len(body) and body[i].isspace():
+            i += 1
+        if i >= len(body):
+            break
+        try:
+            obj, i = dec.raw_decode(body, i)
+        except json.JSONDecodeError:
+            raise HTTPException(400, {"text": "Invalid data format", "code": 6}) from None
+        ev = obj.get("event")
+        raw = ev if isinstance(ev, str) else json.dumps(ev)
+        e = from_result({"_raw": raw, "_time": obj.get("time"), "sourcetype": obj.get("sourcetype", "hec"),
+                         "host": obj.get("host", "")})
+        if e is not None:
+            out.append(e)
+    added = store.add_events(normalize(out))
+    return {"text": "Success", "code": 0, "accepted": len(out), "stored": added}
+
+
+@app.get("/audit", response_class=HTMLResponse)
+def audit_view(user: User = Depends(require("viewer"))):
+    rows = "".join(f"<tr><td>{r['ts']:%Y-%m-%d %H:%M:%S}</td><td>{html.escape(r['actor'])}</td><td>{r['action']}</td>"
+                   f"<td><a href='/case/{html.escape(r['target'])}'>{html.escape(r['target'])}</a></td>"
+                   f"<td class=mono>{html.escape(str(r['detail']))}</td></tr>" for r in store.audit_log())
+    return _page("Audit", f"<p><a href=/>&larr; alerts</a></p><h1>Audit log</h1>"
+                          f"<table><tr><th>When</th><th>Who</th><th>Action</th><th>Case</th><th>Detail</th></tr>{rows}</table>")
+
+
 @app.get("/api/cases")
-def api_cases():
+def api_cases(user: User = Depends(require("viewer"))):
     return [c.model_dump(mode="json") for c in store.all()]
 
 

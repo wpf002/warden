@@ -1,7 +1,7 @@
 """Ingestion and normalization. Stage 2 of the pipeline.
 
 Sources produce dicts in their own shape. Each adapter maps to an `Event` subclass.
-Adding a real SIEM means writing one adapter function and registering it in ADAPTERS.
+Per-source adapters live in warden/adapters/; this module normalizes and enriches.
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import json
 import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Iterable, Iterator
+from typing import Iterable, Iterator
 
 from .events import AuthEvent, Event, parse_event
 from .geo import country_for_ip
@@ -27,33 +27,14 @@ def enrich_asset(host: str) -> str:
 
 
 # ---- adapters ----
+# Per-source parsing lives in warden/adapters/. These two names stay for v0.1 callers.
 def from_generic_json(rec: dict) -> Event:
-    """Shape written by gen-logs and most SIEM JSON exports. `kind` picks the subclass."""
     return parse_event({**rec, "raw": rec})
 
 
 def from_syslog_sshd(line: str) -> AuthEvent | None:
-    """'Sep 02 12:00:01 web-01 sshd[123]: Failed password for bob from 1.2.3.4 port 22 ssh2'"""
-    parts = line.split()
-    if len(parts) < 10 or "sshd" not in line:
-        return None
-    ok = "Accepted" in line
-    fail = "Failed password" in line
-    if not (ok or fail):
-        return None
-    try:
-        user = parts[parts.index("for") + 1]
-        if user == "invalid":
-            user = parts[parts.index("user") + 1]
-        ip = parts[parts.index("from") + 1]
-    except (ValueError, IndexError):
-        return None
-    ts = datetime.strptime(" ".join(parts[:3]), "%b %d %H:%M:%S").replace(year=datetime.now().year, tzinfo=timezone.utc)
-    return AuthEvent(ts=ts, source="sshd", event_type="login_success" if ok else "login_failure",
-                     user=user, source_ip=ip, host=parts[3], logon_type="remote_interactive", raw={"line": line})
-
-
-ADAPTERS: dict[str, Callable] = {"json": from_generic_json, "sshd": from_syslog_sshd}
+    from .adapters.sshd import parse_line
+    return parse_line(line)
 
 
 # ---- pipeline ----
@@ -66,27 +47,25 @@ def normalize(events: Iterable[Event]) -> list[Event]:
         if k in seen:
             continue
         seen.add(k)
-        e.geo = e.geo or enrich_geo(e.source_ip)
+        e.geo = e.geo or (enrich_geo(e.source_ip) if e.source_ip else "")
         e.asset_tier = enrich_asset(e.host) if e.host else "unknown"
         out.append(e)
     out.sort(key=lambda e: e.ts)
     return out
 
 
-def load_file(path: Path) -> list[Event]:
-    def _iter() -> Iterator[Event]:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                if line.startswith("{"):
-                    yield from_generic_json(json.loads(line))
-                else:
-                    ev = from_syslog_sshd(line)
-                    if ev:
-                        yield ev
-    return normalize(_iter())
+def load_file(path: Path, fmt: str | None = None) -> list[Event]:
+    """Read one log file with the matching adapter (autodetected unless `fmt` is given)."""
+    from .adapters import iter_events
+    return normalize(iter_events(Path(path), fmt))
+
+
+def load_many(paths: Iterable[Path], fmt: str | None = None) -> list[Event]:
+    from .adapters import iter_events
+    def _all() -> Iterator[Event]:
+        for p in paths:
+            yield from iter_events(Path(p), fmt)
+    return normalize(_all())
 
 
 # ---- synthetic data (stands in for the SIEM feed) ----

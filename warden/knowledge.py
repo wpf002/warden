@@ -8,6 +8,7 @@ from pathlib import Path
 
 import chromadb
 from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
+from chromadb.utils.embedding_functions import register_embedding_function
 
 from .config import settings
 from .models import Alert
@@ -32,6 +33,7 @@ def technique_meta(ids: list[str]) -> dict:
     return {"technique": ids[0], "technique_base": ids[0].split(".")[0], "techniques": ",".join(ids)}
 
 
+@register_embedding_function
 class HashEmbedding(EmbeddingFunction):
     """Offline fallback: hashed word + bigram bag, L2 normalized. Not semantic, but
     keyword overlap works well enough for playbooks and makes tests hermetic."""
@@ -98,7 +100,10 @@ class KnowledgeBase:
     def __init__(self, persist: bool = True):
         self.client = chromadb.PersistentClient(path=str(settings.chroma_dir)) if persist else chromadb.Client()
         self.ef = embedding_function()
-        self.col = self.client.get_or_create_collection(COLLECTION, embedding_function=self.ef)
+        # Vectors from different embedding functions live in different spaces, so each
+        # function gets its own collection. Switching WARDEN_EMBEDDINGS reindexes cleanly.
+        self.col = self.client.get_or_create_collection(f"{COLLECTION}_{self.ef.name()}", embedding_function=self.ef)
+        self._snapshot: str | None = None
 
     def index_dir(self, path: Path | None = None) -> int:
         path = path or settings.knowledge_dir
@@ -113,11 +118,32 @@ class KnowledgeBase:
                               **technique_meta(techniques_in(c) or doc_techs)})
         if ids:
             self.col.upsert(ids=ids, documents=docs, metadatas=metas)
+        self.invalidate()
         return len(ids)
+
+    def snapshot_id(self) -> str:
+        """Content hash of what is indexed: doc ids plus the ATT&CK manifest version.
+        Recorded on every case so an analysis can be replayed against the same KB."""
+        if self._snapshot:
+            return self._snapshot
+        from .attack import manifest
+        h = hashlib.sha1()
+        got = self.col.get(include=["documents"])
+        for i, d in sorted(zip(got["ids"], got["documents"])):
+            h.update(i.encode())
+            h.update(hashlib.md5((d or "").encode()).digest())
+        m = manifest() or {}
+        h.update(str(m.get("attack_version", "")).encode())
+        self._snapshot = "kb-" + h.hexdigest()[:12]
+        return self._snapshot
+
+    def invalidate(self) -> None:
+        self._snapshot = None
 
     def add_learned_case(self, doc_id: str, text: str) -> None:
         """Feedback loop writes here. Also persisted to disk by feedback.py."""
         self.col.upsert(ids=[f"{doc_id}#0"], documents=[text], metadatas=[{"doc": doc_id, "chunk": 0, "kind": "learned"}])
+        self.invalidate()
 
     def retrieve(self, query: str, k: int = 5, where: dict | None = None) -> list[dict]:
         n = self.col.count()

@@ -1,0 +1,73 @@
+{
+ "Records": [
+  {
+   "eventVersion": "1.08",
+   "eventTime": "2026-09-02T09:00:00Z",
+   "eventSource": "signin.amazonaws.com",
+   "eventName": "ConsoleLogin",
+   "awsRegion": "us-east-1",
+   "sourceIPAddress": "203.0.113.9",
+   "userAgent": "Mozilla/5.0",
+   "userIdentity": {
+    "type": "IAMUser",
+    "userName": "deploy-bot",
+    "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+    "accountId": "111122223333"
+   },
+   "responseElements": {
+    "ConsoleLogin": "Success"
+   },
+   "additionalEventData": {
+    "MFAUsed": "No"
+   },
+   "recipientAccountId": "111122223333"
+  },
+  {
+   "eventVersion": "1.08",
+   "eventTime": "2026-09-02T09:03:00Z",
+   "eventSource": "s3.amazonaws.com",
+   "eventName": "PutBucketPolicy",
+   "awsRegion": "us-east-1",
+   "sourceIPAddress": "203.0.113.9",
+   "userIdentity": {
+    "type": "IAMUser",
+    "userName": "deploy-bot",
+    "arn": "arn:aws:iam::111122223333:user/deploy-bot"
+   },
+   "requestParameters": {
+    "bucketName": "corp-backups",
+    "bucketPolicy": {
+     "Statement": [
+      {
+       "Effect": "Allow",
+       "Principal": "*",
+       "Action": "s3:GetObject"
+      }
+     ]
+    }
+   },
+   "recipientAccountId": "111122223333"
+  },
+  {
+   "eventVersion": "1.08",
+   "eventTime": "2026-09-02T09:04:00Z",
+   "eventSource": "cloudtrail.amazonaws.com",
+   "eventName": "StopLogging",
+   "awsRegion": "us-east-1",
+   "sourceIPAddress": "cloudformation.amazonaws.com",
+   "userIdentity": {
+    "type": "AssumedRole",
+    "arn": "arn:aws:sts::111122223333:assumed-role/admin/x",
+    "sessionContext": {
+     "sessionIssuer": {
+      "userName": "admin"
+     }
+    }
+   },
+   "requestParameters": {
+    "name": "org-trail"
+   },
+   "recipientAccountId": "111122223333"
+  }
+ ]
+}

@@ -6,6 +6,16 @@ from pathlib import Path
 from .config import settings
 
 
+def _since(v):
+    if not v:
+        return None
+    from datetime import datetime, timedelta, timezone
+    units = {"m": "minutes", "h": "hours", "d": "days"}
+    if v[-1] in units and v[:-1].isdigit():
+        return datetime.now(timezone.utc) - timedelta(**{units[v[-1]]: int(v[:-1])})
+    return datetime.fromisoformat(v)
+
+
 def cmd_gen_logs(a):
     from .ingest import generate_logs
     n = generate_logs(Path(a.out), events=a.events, attackers=a.attackers)
@@ -21,7 +31,11 @@ def cmd_index(a):
 def cmd_run(a):
     from .pipeline import run
     only = [d.strip() for d in a.detections.split(',')] if a.detections else None
-    cases = run(Path(a.log) if a.log else None, rerun=a.rerun, only=only)
+    if a.from_db:
+        from .pipeline import run_stored
+        cases = run_stored(since=_since(a.since), rerun=a.rerun, only=only)
+    else:
+        cases = run(Path(a.log) if a.log else None, rerun=a.rerun, only=only, fmt=a.format)
     if not cases:
         print("no alerts")
         return
@@ -51,7 +65,7 @@ def cmd_detections(a):
 def cmd_eval(a):
     import json as _json
     from . import evaluate
-    root = Path(a.dir) if a.dir else None
+    root = Path(a.dir) if a.dir else (settings.data_dir / "eval-real" if a.real else None)
     cases = evaluate.discover(root)
     if not cases:
         print(f"no eval cases found in {root or settings.eval_dir}")
@@ -71,6 +85,13 @@ def cmd_attack_ingest(a):
     from .attack import ingest
     n_tech, n_chunks = ingest(url=a.url, file=Path(a.file) if a.file else None, index=not a.no_index)
     print(f"ingested {n_tech} techniques, {n_chunks} chunks")
+
+
+def cmd_hash_password(a):
+    import getpass
+    from .auth import hash_password
+    pw = a.password or getpass.getpass("password: ")
+    print(hash_password(pw))
 
 
 def cmd_serve(a):
@@ -93,8 +114,11 @@ def main(argv=None):
 
     r = sub.add_parser("run", help="run detection -> RAG -> LLM -> guardrails -> actions")
     r.add_argument("--log", default=None)
+    r.add_argument("--format", default=None, help="force an adapter: windows, okta, entra, cloudtrail, splunk, elastic, sshd, generic")
     r.add_argument("--rerun", action="store_true", help="re-analyze alerts that already have cases")
     r.add_argument("--detections", default=None, help="comma list, restrict which rules run")
+    r.add_argument("--from-db", action="store_true", help="detect over stored events (HEC, earlier imports)")
+    r.add_argument("--since", default=None, help="with --from-db: e.g. 24h, 7d, or an ISO timestamp")
     r.set_defaults(fn=cmd_run)
 
     d = sub.add_parser("detections", help="list the registered detections")
@@ -102,6 +126,7 @@ def main(argv=None):
 
     e = sub.add_parser("eval", help="score the pipeline against labeled fixtures")
     e.add_argument("--dir", default=None, help=f"eval case root (default {settings.eval_dir})")
+    e.add_argument("--real", action="store_true", help="run the real-log suite in data/eval-real")
     e.add_argument("--detections", default=None, help="comma list, restrict which rules run")
     e.add_argument("--no-llm", action="store_true", help="detection metrics only, skip RAG and the model")
     e.add_argument("--json", action="store_true")
@@ -113,6 +138,10 @@ def main(argv=None):
     ai.add_argument("--file", default=None, help="use a local bundle instead of downloading")
     ai.add_argument("--no-index", action="store_true", help="write docs to disk but skip embedding")
     ai.set_defaults(fn=cmd_attack_ingest)
+
+    hp = sub.add_parser("hash-password", help="hash a password for WARDEN_USERS")
+    hp.add_argument("--password", default=None, help="omit to be prompted")
+    hp.set_defaults(fn=cmd_hash_password)
 
     s = sub.add_parser("serve", help="start the SOC dashboard")
     s.add_argument("--host", default="127.0.0.1")

@@ -1,0 +1,5 @@
+Sep 02 09:00:01 web-01 sshd[811]: Invalid user oracle from 192.0.2.99 port 50122
+Sep 02 09:00:01 web-01 sshd[811]: Failed password for invalid user oracle from 192.0.2.99 port 50122 ssh2
+Sep 02 09:00:03 web-01 sshd[812]: Failed password for root from 192.0.2.99 port 50123 ssh2
+Sep 02 09:00:09 web-01 sshd[813]: Accepted publickey for deploy from 10.0.0.12 port 50124 ssh2
+Sep 02 09:00:10 web-01 sshd[813]: pam_unix(sshd:session): session opened for user deploy

@@ -16,16 +16,35 @@ def _env(name: str, default: str) -> str:
 @dataclass
 class Settings:
     llm_provider: str = field(default_factory=lambda: _env("WARDEN_LLM", "anthropic"))
-    model: str = field(default_factory=lambda: _env("WARDEN_MODEL", "claude-sonnet-4-5"))
+    model: str = field(default_factory=lambda: _env("WARDEN_MODEL", "claude-opus-5"))
+    effort: str = field(default_factory=lambda: _env("WARDEN_EFFORT", "medium"))
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY", ""))
+    # needed only when the key is not scoped to a workspace
+    anthropic_workspace_id: str = field(default_factory=lambda: _env("ANTHROPIC_WORKSPACE_ID", ""))
     embeddings: str = field(default_factory=lambda: _env("WARDEN_EMBEDDINGS", "default"))
 
     data_dir: Path = field(default_factory=lambda: Path(_env("WARDEN_DATA_DIR", "data")))
     log_file: Path = field(default_factory=lambda: Path(_env("WARDEN_LOG_FILE", "data/sample_logs/auth.jsonl")))
 
+    database_url: str = field(default_factory=lambda: _env("WARDEN_DATABASE_URL", ""))
+    tenant: str = field(default_factory=lambda: _env("WARDEN_TENANT", "default"))
+
+    # dashboard / API auth (see warden/auth.py)
+    auth_mode: str = field(default_factory=lambda: _env("WARDEN_AUTH", "none"))
+    users: str = field(default_factory=lambda: _env("WARDEN_USERS", ""))
+    trusted_proxies: str = field(default_factory=lambda: _env("WARDEN_TRUSTED_PROXIES", "127.0.0.1/32"))
+    proxy_user_header: str = field(default_factory=lambda: _env("WARDEN_PROXY_USER_HEADER", "x-forwarded-user"))
+    proxy_groups_header: str = field(default_factory=lambda: _env("WARDEN_PROXY_GROUPS_HEADER", "x-forwarded-groups"))
+    analyst_group: str = field(default_factory=lambda: _env("WARDEN_ANALYST_GROUP", "soc-analysts"))
+    admin_group: str = field(default_factory=lambda: _env("WARDEN_ADMIN_GROUP", "soc-admins"))
+
+    hec_token: str = field(default_factory=lambda: _env("WARDEN_HEC_TOKEN", ""))
+
     # detection tuning
     bf_threshold: int = field(default_factory=lambda: int(_env("WARDEN_BF_THRESHOLD", "10")))
     bf_window_sec: int = field(default_factory=lambda: int(_env("WARDEN_BF_WINDOW_SEC", "300")))
+    spray_min_users: int = field(default_factory=lambda: int(_env("WARDEN_SPRAY_MIN_USERS", "5")))
+    spray_max_per_user: float = field(default_factory=lambda: float(_env("WARDEN_SPRAY_MAX_PER_USER", "3")))
     travel_max_kmh: int = field(default_factory=lambda: int(_env("WARDEN_TRAVEL_MAX_KMH", "900")))
     travel_min_km: int = field(default_factory=lambda: int(_env("WARDEN_TRAVEL_MIN_KM", "500")))
     mfa_threshold: int = field(default_factory=lambda: int(_env("WARDEN_MFA_THRESHOLD", "5")))

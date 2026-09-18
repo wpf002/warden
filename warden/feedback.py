@@ -11,32 +11,37 @@ from .models import Case, RecommendedAction
 from .store import CaseStore
 
 
-def approve_action(case: Case, idx: int, store: CaseStore) -> Case:
+def approve_action(case: Case, idx: int, store: CaseStore, actor: str = "system") -> Case:
     a = case.actions[idx]
     if a.status == "pending_approval":
         case.actions[idx] = actions.execute(case.alert, RecommendedAction(action=a.action, target=a.target))
-        case.guardrail_log.append(f"APPROVED {a.action}({a.target}) by analyst")
+        case.guardrail_log.append(f"APPROVED {a.action}({a.target}) by {actor}")
+        store.audit(actor, "approve_action", case.alert.id, response_action=a.action, response_target=a.target,
+                    result=case.actions[idx].status)
     _refresh_status(case)
     store.save(case)
     return case
 
 
-def deny_action(case: Case, idx: int, store: CaseStore) -> Case:
+def deny_action(case: Case, idx: int, store: CaseStore, actor: str = "system") -> Case:
     a = case.actions[idx]
     if a.status == "pending_approval":
         a.status = "denied"
-        a.detail = "denied by analyst"
-        case.guardrail_log.append(f"DENIED   {a.action}({a.target}) by analyst")
+        a.detail = f"denied by {actor}"
+        case.guardrail_log.append(f"DENIED   {a.action}({a.target}) by {actor}")
+        store.audit(actor, "deny_action", case.alert.id, response_action=a.action, response_target=a.target)
     _refresh_status(case)
     store.save(case)
     return case
 
 
-def record_verdict(case: Case, verdict: str, note: str, store: CaseStore, kb: KnowledgeBase) -> Case:
+def record_verdict(case: Case, verdict: str, note: str, store: CaseStore, kb: KnowledgeBase,
+                   actor: str = "system") -> Case:
     case.analyst_verdict = verdict  # type: ignore[assignment]
     case.analyst_note = note
     case.status = "closed"
     store.save(case)
+    store.audit(actor, "verdict", case.alert.id, verdict=verdict, note=note, rule=case.alert.rule)
 
     # Write a learned case. This is the "update knowledge base" arrow in the diagram.
     a = case.alert

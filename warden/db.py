@@ -1,0 +1,125 @@
+"""Persistence. SQLite by default, Postgres when WARDEN_DATABASE_URL points at one.
+
+Cases are stored as a JSON document plus the columns the dashboard filters on, so the
+`Case` model can evolve without a migration for every field. Everything that has to be
+replayable - model calls, analyst decisions - gets its own append-only table.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from functools import lru_cache
+from pathlib import Path
+
+from sqlalchemy import (JSON, Column, DateTime, Float, Integer, MetaData, String, Table, Text, UniqueConstraint,
+                        create_engine, event)
+from sqlalchemy.engine import Engine
+
+from .config import settings
+
+metadata = MetaData()
+
+cases = Table(
+    "cases", metadata,
+    Column("id", String(64), primary_key=True),
+    Column("tenant", String(64), nullable=False, default="default", index=True),
+    Column("ts", DateTime(timezone=True), index=True),
+    Column("rule", String(64), index=True),
+    Column("status", String(32), index=True),
+    Column("verdict", String(32)),
+    Column("risk", Integer),
+    Column("incident_id", String(64), index=True),
+    Column("doc", JSON, nullable=False),
+    Column("updated", DateTime(timezone=True)),
+)
+
+incidents = Table(
+    "incidents", metadata,
+    Column("id", String(64), primary_key=True),
+    Column("tenant", String(64), nullable=False, default="default", index=True),
+    Column("ts", DateTime(timezone=True), index=True),
+    Column("status", String(32), index=True),
+    Column("risk", Integer),
+    Column("doc", JSON, nullable=False),
+    Column("updated", DateTime(timezone=True)),
+)
+
+events = Table(
+    "events", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("tenant", String(64), nullable=False, default="default", index=True),
+    Column("ts", DateTime(timezone=True), index=True),
+    Column("kind", String(16), index=True),
+    Column("source", String(64)),
+    Column("user", String(256), index=True),
+    Column("source_ip", String(64), index=True),
+    Column("host", String(256), index=True),
+    Column("dedupe", String(512), nullable=False),
+    Column("doc", JSON, nullable=False),
+    UniqueConstraint("tenant", "dedupe", name="uq_events_dedupe"),
+)
+
+audit = Table(
+    "audit", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("tenant", String(64), nullable=False, default="default", index=True),
+    Column("ts", DateTime(timezone=True), index=True),
+    Column("actor", String(256), index=True),
+    Column("action", String(64), index=True),
+    Column("target", String(256)),
+    Column("detail", JSON),
+)
+
+llm_calls = Table(
+    "llm_calls", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("tenant", String(64), nullable=False, default="default", index=True),
+    Column("ts", DateTime(timezone=True), index=True),
+    Column("subject_id", String(64), index=True),     # alert or incident id
+    Column("stage", String(32)),                       # analyze | propose | verify ...
+    Column("prompt_version", String(32)),
+    Column("model", String(64)),
+    Column("kb_snapshot", String(64)),
+    Column("retrieved", JSON),
+    Column("input_tokens", Integer),
+    Column("output_tokens", Integer),
+    Column("cost_usd", Float),
+    Column("latency_ms", Integer),
+    Column("output", JSON),
+    Column("error", Text),
+)
+
+
+def _url() -> str:
+    if settings.database_url:
+        return settings.database_url
+    path = settings.state_dir / "warden.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{path}"
+
+
+def make_engine(url: str) -> Engine:
+    eng = create_engine(url, future=True, json_serializer=lambda o: json.dumps(o, default=str))
+    if url.startswith("sqlite"):
+        @event.listens_for(eng, "connect")
+        def _pragma(conn, _):  # WAL so the dashboard can read while the pipeline writes
+            cur = conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA foreign_keys=ON")
+            cur.close()
+    metadata.create_all(eng)
+    return eng
+
+
+@lru_cache(maxsize=8)
+def engine(url: str | None = None) -> Engine:
+    return make_engine(url or _url())
+
+
+def engine_for_dir(state_dir: Path) -> Engine:
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return engine(f"sqlite:///{state_dir / 'warden.db'}")
+
+
+def now() -> datetime:
+    return datetime.now(timezone.utc)

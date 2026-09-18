@@ -1,0 +1,92 @@
+{
+ "took": 3,
+ "hits": {
+  "total": {
+   "value": 3
+  },
+  "hits": [
+   {
+    "_index": "logs-auth",
+    "_source": {
+     "@timestamp": "2026-09-02T09:00:00Z",
+     "event": {
+      "category": [
+       "authentication"
+      ],
+      "outcome": "failure",
+      "action": "logon-failed",
+      "dataset": "system.auth"
+     },
+     "user": {
+      "name": "root"
+     },
+     "source": {
+      "ip": "198.51.100.17",
+      "geo": {
+       "country_iso_code": "CN",
+       "location": {
+        "lat": 35.0,
+        "lon": 104.0
+       }
+      }
+     },
+     "host": {
+      "name": "WEB-01"
+     }
+    }
+   },
+   {
+    "_index": "logs-proc",
+    "_source": {
+     "@timestamp": "2026-09-02T09:00:05Z",
+     "event": {
+      "category": [
+       "process"
+      ],
+      "action": "start"
+     },
+     "process": {
+      "name": "powershell.exe",
+      "command_line": "powershell -enc AAAA",
+      "parent": {
+       "name": "winword.exe"
+      },
+      "pid": 4242
+     },
+     "user": {
+      "name": "jlee"
+     },
+     "host": {
+      "name": "ws-17"
+     }
+    }
+   },
+   {
+    "_index": "logs-net",
+    "_source": {
+     "@timestamp": "2026-09-02T09:00:09Z",
+     "event": {
+      "category": [
+       "network"
+      ]
+     },
+     "source": {
+      "ip": "10.0.4.17",
+      "bytes": 1200
+     },
+     "destination": {
+      "ip": "93.184.216.34",
+      "port": 443,
+      "bytes": 800
+     },
+     "network": {
+      "transport": "tcp"
+     },
+     "host": {
+      "name": "ws-17"
+     }
+    }
+   }
+  ]
+ }
+}

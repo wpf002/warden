@@ -1,10 +1,11 @@
-langchain-core>=1.0
-langchain-anthropic>=1.0
+anthropic>=1.7,<2
 langgraph>=1.0
 chromadb>=1.0
 fastapi>=0.110
 uvicorn>=0.29
 python-multipart>=0.0.9   # fastapi Form() in the dashboard verdict route
 pydantic>=2.0
+sqlalchemy>=2.0
+python-evtx>=0.8        # reads Windows .evtx directly
 python-dotenv>=1.0
 pytest>=8.0

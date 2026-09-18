@@ -9,12 +9,10 @@ from pathlib import Path
 from .config import settings
 from .models import ActionResult, Alert, RecommendedAction
 
-_LOG = settings.state_dir / "actions.jsonl"
-
-
 def _record(alert_id: str, res: ActionResult) -> None:
-    _LOG.parent.mkdir(parents=True, exist_ok=True)
-    with open(_LOG, "a") as f:
+    log = settings.state_dir / "actions.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with open(log, "a") as f:
         f.write(json.dumps({"alert": alert_id, **res.model_dump(mode="json")}) + "\n")
 
 

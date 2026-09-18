@@ -28,6 +28,8 @@ class Event(BaseModel):
     user: str = ""
     source_ip: str = ""
     geo: str = ""                    # country code, or "internal"
+    geo_lat: float | None = None     # source.geo.location, when the source provides it
+    geo_lon: float | None = None
     asset_tier: str = "unknown"      # crown_jewel | standard | unknown
     entity_ids: dict[str, str] = Field(default_factory=dict)  # session, device, process guid
     raw: dict = Field(default_factory=dict)
@@ -48,6 +50,8 @@ class AuthEvent(Event):
     ]
     logon_type: str = ""             # interactive | remote_interactive | network | service | ""
     user_agent: str = ""
+    device_id: str = ""
+    session_id: str = ""
     mfa_factor: str = ""             # push | totp | sms | webauthn
     outcome_reason: str = ""         # "bad_password", "user_rejected", "timeout"
 

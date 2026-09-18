@@ -24,6 +24,35 @@ python -m warden.cli serve   # http://127.0.0.1:8000
 
 Fully offline: `WARDEN_LLM=mock WARDEN_EMBEDDINGS=hash`.
 
+## Ingest
+
+Adapters in `warden/adapters/`, one per source, autodetected from the file:
+
+| Source | Input |
+|---|---|
+| Windows Security | `.evtx` directly, or `wevtutil /f:xml` export. 4624/4625/4768/4771/4776/4740, 4720-4726, 4728/4732/4756, 1102 |
+| Okta | System Log JSON (`/api/v1/logs`), incl. Okta Verify push outcomes |
+| Microsoft Entra ID | Graph sign-in logs and directory audit logs |
+| AWS CloudTrail | S3 `Records` files or event-history export; ConsoleLogin also becomes an auth event |
+| Splunk | search export NDJSON (routes `_raw` by shape), plus a live HEC receiver at `POST /services/collector/event` |
+| Elastic / OpenSearch | `_search` responses or ECS NDJSON |
+| sshd | `auth.log` / `secure` |
+
+```bash
+python -m warden.cli run --log Security.evtx
+python -m warden.cli run --log okta.json --format okta
+python -m warden.cli run --from-db --since 24h      # events pushed over HEC
+```
+
+Events and cases are stored in SQLite (`data/state/warden.db`) or Postgres via
+`WARDEN_DATABASE_URL`. Every model call is logged with its alert id, retrieved chunk ids,
+prompt version, KB snapshot, tokens, and cost (`llm_calls` table). Every analyst approval,
+denial, and verdict is written to the `audit` table with who did it.
+
+Dashboard auth: `WARDEN_AUTH=basic` (users from `WARDEN_USERS`, hashes from
+`warden hash-password`) or `WARDEN_AUTH=proxy` (OIDC terminated by oauth2-proxy or similar,
+identity header trusted only from `WARDEN_TRUSTED_PROXIES`). Roles: viewer, analyst, admin.
+
 ## Detections
 
 Each detection is one file in `warden/detections/`, registered by decorator, with a
@@ -32,7 +61,7 @@ playbook in the knowledge base and a labeled fixture in `data/eval/`.
 | Detection | MITRE | Signal |
 |---|---|---|
 | `brute_force` | T1110.001 | many failures from one IP against few accounts |
-| `password_spray` | T1110.003 | failures from one IP spread thinly across many accounts |
+| `password_spray` | T1110.003 | 5+ distinct accounts failing from one IP in the window, few tries each |
 | `impossible_travel` | T1078 | two successes for one user from geos no one could travel between |
 | `mfa_fatigue` | T1621 | a run of denied/timed-out MFA pushes, scored higher if an approval follows |
 

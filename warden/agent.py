@@ -5,13 +5,14 @@
 State is one Case. Each node is a plain function so it's testable without the graph."""
 from __future__ import annotations
 
+import time
 from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 
 from . import actions, guardrails
 from .knowledge import KnowledgeBase
-from .llm import Analyzer
+from .llm import PROMPT_VERSION, Analyzer
 from .models import ActionResult, Alert, Case
 from .store import CaseStore
 
@@ -27,8 +28,27 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore):
         return {"case": c}
 
     def analyze(state: State) -> State:
+        """Every model output is logged with the alert id, retrieved context, prompt version,
+        and KB snapshot. If it can't be replayed, it didn't happen (ROADMAP ground rule 3)."""
         c = state["case"]
-        c.analysis = analyzer.analyze(c.alert, c.retrieved_docs)
+        c.prompt_version = PROMPT_VERSION
+        c.kb_snapshot = kb.snapshot_id()
+        t0 = time.monotonic()
+        err = None
+        try:
+            c.analysis = analyzer.analyze(c.alert, c.retrieved_docs)
+        except Exception as e:  # noqa: BLE001 - logged, then re-raised
+            err = f"{type(e).__name__}: {e}"
+            raise
+        finally:
+            u = getattr(analyzer, "last_usage", {}) or {}
+            c.model = u.get("model") or getattr(analyzer, "model", "")
+            store.log_llm_call(
+                subject_id=c.alert.id, stage="analyze", prompt_version=PROMPT_VERSION, model=c.model,
+                kb_snapshot=c.kb_snapshot, retrieved=[d["id"] for d in c.retrieved_docs],
+                input_tokens=u.get("input_tokens"), output_tokens=u.get("output_tokens"),
+                cost_usd=u.get("cost_usd"), latency_ms=int((time.monotonic() - t0) * 1000),
+                output=c.analysis.model_dump(mode="json") if c.analysis else None, error=err)
         return {"case": c}
 
     def guardrail(state: State) -> State:

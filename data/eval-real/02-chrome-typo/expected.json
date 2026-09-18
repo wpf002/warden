@@ -1,0 +1,6 @@
+{
+  "name": "real: one mistyped password, then a normal sign-in",
+  "description": "EVTX-ATTACK-SAMPLES CA_4624_4625_LogonType2_LogonProc_chrome. A single 4625 followed by successful logons on the same workstation. Nothing should fire.",
+  "events": "../../real/CA_4624_4625_LogonType2_LogonProc_chrome.evtx",
+  "alerts": []
+}

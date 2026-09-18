@@ -98,3 +98,7 @@ class Case(BaseModel):
     analyst_verdict: Optional[Literal["true_positive", "false_positive"]] = None
     analyst_note: str = ""
     status: Literal["open", "awaiting_approval", "closed"] = "open"
+    incident_id: Optional[str] = None
+    prompt_version: str = ""
+    kb_snapshot: str = ""
+    model: str = ""

@@ -83,7 +83,10 @@ class EvalCase:
     @classmethod
     def load(cls, d: Path) -> "EvalCase":
         spec = json.loads((d / "expected.json").read_text())
-        events = d / spec.get("events", "events.jsonl")
+        events = (d / spec.get("events", "events.jsonl")).resolve()
+        if not events.exists():
+            raise FileNotFoundError(f"{d.name}: events file {events} missing"
+                                    + (" - run scripts/fetch_real_samples.py" if "real" in str(events) else ""))
         return cls(
             name=spec.get("name", d.name),
             description=spec.get("description", ""),

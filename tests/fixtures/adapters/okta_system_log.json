@@ -1,0 +1,577 @@
+[
+ {
+  "uuid": "u0",
+  "published": "2026-09-02T09:00:00Z",
+  "eventType": "system.push.send_factor_verify_push",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u1",
+  "published": "2026-09-02T09:00:20Z",
+  "eventType": "user.mfa.okta_verify.deny_push",
+  "outcome": {
+   "result": "FAILURE",
+   "reason": "User rejected Okta push verify"
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u2",
+  "published": "2026-09-02T09:01:10Z",
+  "eventType": "system.push.send_factor_verify_push",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u3",
+  "published": "2026-09-02T09:01:30Z",
+  "eventType": "user.mfa.okta_verify.deny_push",
+  "outcome": {
+   "result": "FAILURE",
+   "reason": "User rejected Okta push verify"
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u4",
+  "published": "2026-09-02T09:02:20Z",
+  "eventType": "system.push.send_factor_verify_push",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u5",
+  "published": "2026-09-02T09:02:40Z",
+  "eventType": "user.mfa.okta_verify.deny_push",
+  "outcome": {
+   "result": "FAILURE",
+   "reason": "User rejected Okta push verify"
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u6",
+  "published": "2026-09-02T09:03:30Z",
+  "eventType": "system.push.send_factor_verify_push",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u7",
+  "published": "2026-09-02T09:03:50Z",
+  "eventType": "user.mfa.okta_verify.deny_push",
+  "outcome": {
+   "result": "FAILURE",
+   "reason": "User rejected Okta push verify"
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u8",
+  "published": "2026-09-02T09:04:40Z",
+  "eventType": "system.push.send_factor_verify_push",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u9",
+  "published": "2026-09-02T09:05:00Z",
+  "eventType": "user.mfa.okta_verify.deny_push",
+  "outcome": {
+   "result": "FAILURE",
+   "reason": "User rejected Okta push verify"
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u10",
+  "published": "2026-09-02T09:05:50Z",
+  "eventType": "system.push.send_factor_verify_push",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u11",
+  "published": "2026-09-02T09:06:10Z",
+  "eventType": "user.mfa.okta_verify.deny_push",
+  "outcome": {
+   "result": "FAILURE",
+   "reason": "User rejected Okta push verify"
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u12",
+  "published": "2026-09-02T09:08:20Z",
+  "eventType": "user.authentication.auth_via_mfa",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u13",
+  "published": "2026-09-02T09:08:25Z",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ },
+ {
+  "uuid": "u14",
+  "published": "2026-09-02T09:10:20Z",
+  "eventType": "user.mfa.factor.activate",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": [
+   {
+    "type": "User",
+    "alternateId": "asmith@corp.example"
+   }
+  ]
+ },
+ {
+  "uuid": "u15",
+  "published": "2026-09-02T09:11:40Z",
+  "eventType": "group.user_membership.add",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "185.220.101.44",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Netherlands",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 52.37,
+     "lon": 4.9
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": [
+   {
+    "type": "User",
+    "alternateId": "asmith@corp.example"
+   },
+   {
+    "type": "UserGroup",
+    "displayName": "Okta Super Admins"
+   }
+  ]
+ },
+ {
+  "uuid": "u16",
+  "published": "2026-09-02T09:00:10Z",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "FAILURE",
+   "reason": "INVALID_CREDENTIALS"
+  },
+  "actor": {
+   "id": "00u1",
+   "type": "User",
+   "alternateId": "asmith@corp.example",
+   "displayName": "A Smith"
+  },
+  "client": {
+   "ipAddress": "203.0.113.5",
+   "userAgent": {
+    "rawUserAgent": "python-requests/2.31"
+   },
+   "geographicalContext": {
+    "country": "Russia",
+    "city": "Amsterdam",
+    "geolocation": {
+     "lat": 55.7,
+     "lon": 37.6
+    }
+   }
+  },
+  "authenticationContext": {
+   "externalSessionId": "idxAbc"
+  },
+  "target": []
+ }
+]

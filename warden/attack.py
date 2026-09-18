@@ -144,6 +144,7 @@ def index_techniques(techniques: list[dict], kb=None, batch: int = 500) -> int:
                           "techniques": t["id"], "name": t["name"]})
     for s in range(0, len(ids), batch):
         kb.col.upsert(ids=ids[s:s + batch], documents=docs[s:s + batch], metadatas=metas[s:s + batch])
+    kb.invalidate()
     return len(ids)
 
 

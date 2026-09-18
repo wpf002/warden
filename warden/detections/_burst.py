@@ -37,9 +37,10 @@ def failure_bursts(
 
 
 def is_spray(burst: list[AuthEvent]) -> bool:
-    """Many distinct users relative to volume = spray, otherwise a single-account grind."""
+    """Same test password_spray fires on: enough distinct accounts, few tries each."""
+    from ..config import settings
     users = {e.user for e in burst}
-    return len(users) >= max(3, len(burst) // 3)
+    return len(users) >= settings.spray_min_users and len(burst) / len(users) <= settings.spray_max_per_user
 
 
 def success_after(evs: list[AuthEvent], users: set[str], last, window_sec: int) -> bool:

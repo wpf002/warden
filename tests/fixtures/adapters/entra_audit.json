@@ -1,0 +1,29 @@
+{
+ "value": [
+  {
+   "id": "a1",
+   "activityDateTime": "2026-09-02T09:40:00Z",
+   "activityDisplayName": "Add member to role",
+   "category": "RoleManagement",
+   "result": "success",
+   "initiatedBy": {
+    "user": {
+     "userPrincipalName": "mgarcia@corp.example",
+     "ipAddress": "45.83.140.6"
+    }
+   },
+   "targetResources": [
+    {
+     "type": "User",
+     "userPrincipalName": "mgarcia@corp.example",
+     "modifiedProperties": [
+      {
+       "displayName": "Role.DisplayName",
+       "newValue": "\"Global Administrator\""
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

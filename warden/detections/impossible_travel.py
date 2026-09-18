@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from ..config import settings
 from ..events import AuthEvent
-from ..geo import INTERNAL, distance_km, required_kmh
+from ..geo import INTERNAL, distance_km, haversine_km
 from ..models import Alert
 from . import Detection, register
 
@@ -37,12 +37,14 @@ class ImpossibleTravel(Detection):
         for user, evs in by_user.items():
             evs.sort(key=lambda e: e.ts)
             for prev, cur in zip(evs, evs[1:]):
-                if prev.geo == cur.geo:
+                if prev.geo == cur.geo and not _has_coords(prev, cur):
                     continue
-                km = distance_km(prev.geo, cur.geo)
+                km = _km(prev, cur)
                 seconds = (cur.ts - prev.ts).total_seconds()
-                kmh = required_kmh(prev.geo, cur.geo, seconds)
-                if km is None or kmh is None or km < min_km or kmh <= max_kmh:
+                if km is None or km < min_km:
+                    continue
+                kmh = km / max(seconds / 3600.0, 1e-6)
+                if kmh <= max_kmh:
                     continue
                 out.append(self.new_alert(
                     key=f"{user}|{prev.source_ip}|{cur.source_ip}", first_seen=prev.ts, ts=cur.ts,
@@ -57,8 +59,20 @@ class ImpossibleTravel(Detection):
                             "elapsed_sec": int(seconds), "implied_kmh": round(kmh),
                             "max_plausible_kmh": max_kmh,
                             "from_ip": prev.source_ip, "to_ip": cur.source_ip,
+                            "precision": "coordinates" if _has_coords(prev, cur) else "country_centroid",
                             "user_agent_changed": prev.user_agent != cur.user_agent},
                     evidence=[{"ts": e.ts.isoformat(), "user": e.user, "host": e.host,
                                "type": f"login_success from {e.geo} ({e.source_ip})"} for e in (prev, cur)],
                 ))
         return out
+
+
+def _has_coords(a: AuthEvent, b: AuthEvent) -> bool:
+    return None not in (a.geo_lat, a.geo_lon, b.geo_lat, b.geo_lon)
+
+
+def _km(a: AuthEvent, b: AuthEvent) -> float | None:
+    """Source-provided coordinates when both legs have them, country centroids otherwise."""
+    if _has_coords(a, b):
+        return haversine_km((a.geo_lat, a.geo_lon), (b.geo_lat, b.geo_lon))
+    return distance_km(a.geo, b.geo)

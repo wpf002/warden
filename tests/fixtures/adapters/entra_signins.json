@@ -1,0 +1,96 @@
+{
+ "value": [
+  {
+   "id": "s1",
+   "createdDateTime": "2026-09-02T09:00:00Z",
+   "userPrincipalName": "mgarcia@corp.example",
+   "ipAddress": "72.14.201.9",
+   "appDisplayName": "Office 365",
+   "isInteractive": true,
+   "status": {
+    "errorCode": 0
+   },
+   "location": {
+    "countryOrRegion": "US",
+    "geoCoordinates": {
+     "latitude": 40.7,
+     "longitude": -74.0
+    }
+   },
+   "deviceDetail": {
+    "deviceId": "dev-1",
+    "browser": "Edge 128"
+   },
+   "correlationId": "c1"
+  },
+  {
+   "id": "s2",
+   "createdDateTime": "2026-09-02T09:25:00.1234567Z",
+   "userPrincipalName": "mgarcia@corp.example",
+   "ipAddress": "45.83.140.6",
+   "appDisplayName": "Office 365",
+   "isInteractive": true,
+   "status": {
+    "errorCode": 0
+   },
+   "location": {
+    "countryOrRegion": "DE",
+    "geoCoordinates": {
+     "latitude": 50.1,
+     "longitude": 8.7
+    }
+   },
+   "deviceDetail": {
+    "deviceId": "",
+    "browser": "Chrome 120"
+   },
+   "correlationId": "c2"
+  },
+  {
+   "id": "s3",
+   "createdDateTime": "2026-09-02T09:30:00Z",
+   "userPrincipalName": "jlee@corp.example",
+   "ipAddress": "45.83.140.6",
+   "status": {
+    "errorCode": 500121,
+    "failureReason": "Authentication failed during strong authentication request."
+   },
+   "authenticationDetails": [
+    {
+     "authenticationMethod": "Mobile app notification",
+     "succeeded": false,
+     "authenticationStepResultDetail": "MFA denied; user declined the authentication"
+    }
+   ],
+   "location": {
+    "countryOrRegion": "DE"
+   }
+  },
+  {
+   "id": "s4",
+   "createdDateTime": "2026-09-02T09:31:00Z",
+   "userPrincipalName": "jlee@corp.example",
+   "ipAddress": "45.83.140.6",
+   "status": {
+    "errorCode": 50126,
+    "failureReason": "Invalid username or password"
+   },
+   "location": {
+    "countryOrRegion": "DE"
+   }
+  },
+  {
+   "id": "s5",
+   "createdDateTime": "2026-09-02T09:32:00Z",
+   "userPrincipalName": "jlee@corp.example",
+   "ipAddress": "45.83.140.6",
+   "status": {
+    "errorCode": 50053,
+    "failureReason": "Account is locked"
+   },
+   "location": {
+    "countryOrRegion": "DE"
+   }
+  }
+ ]
+}
