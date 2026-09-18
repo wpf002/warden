@@ -160,6 +160,17 @@ proposals = Table(
 )
 
 
+eval_runs = Table(
+    "eval_runs", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("ts", DateTime(timezone=True), index=True),
+    Column("suite", String(32)),
+    Column("git_sha", String(40)),
+    Column("analyzer", String(64)),
+    Column("metrics", JSON),
+)
+
+
 def _url() -> str:
     if settings.database_url:
         return settings.database_url

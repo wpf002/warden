@@ -57,8 +57,18 @@ def build_graph(kb: KnowledgeBase, analyzer: Analyzer, store: CaseStore, stats: 
         c = state["case"]
         from .stats import threshold_bump
         bump = max((threshold_bump(stats.get(r)) for r in c.alert.rules()), default=0)
-        decisions = guardrails.evaluate(c.alert, c.analysis, bump=bump)
-        c.guardrail_log = [d.log_line() for d in decisions]
+        from .governance import verify, verify_with_model
+        from .tenancy import policy
+        c.verification = verify(c.alert, c.analysis, c.retrieved_docs)
+        try:
+            c.verification += verify_with_model(c.alert, c.analysis)
+        except Exception as e:  # noqa: BLE001 - a failed second opinion is noted, not fatal
+            c.guardrail_log.append(f"VERIFY second opinion unavailable: {type(e).__name__}")
+        for v in c.verification:
+            c.guardrail_log.append(f"VERIFY   {v}")
+        decisions = guardrails.evaluate(c.alert, c.analysis, bump=bump, policy=policy(store.tenant),
+                                        verified=not c.verification)
+        c.guardrail_log = [*c.guardrail_log, *(d.log_line() for d in decisions)]
         c.actions = []
         for d in decisions:
             if d.verdict == "execute":

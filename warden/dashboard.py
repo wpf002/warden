@@ -19,6 +19,10 @@ from .store import CaseStore
 
 app = FastAPI(title="Warden SOC")
 
+from .api import router as api_router  # noqa: E402
+
+app.include_router(api_router)
+
 
 @lru_cache(maxsize=1)
 def _kb() -> KnowledgeBase:
@@ -201,8 +205,14 @@ async def hec_event(request: Request):
     from .ingest import normalize
 
     token = request.headers.get("authorization", "")
-    if not settings.hec_token or not hmac.compare_digest(token, f"Splunk {settings.hec_token}"):
+    tokens = {t: n for n, _, t in (p.partition(":") for p in settings.hec_tokens.split(",") if ":" in p)}
+    if settings.hec_token:
+        tokens[settings.hec_token] = settings.tenant
+    tenant = next((ten for tok, ten in tokens.items() if hmac.compare_digest(token, f"Splunk {tok}")), None)
+    if tenant is None:
         raise HTTPException(401, {"text": "Invalid token", "code": 4})
+    from .api import store_for
+    target = store if tenant == store.tenant else store_for(tenant)
     body = (await request.body()).decode("utf-8", "replace")
     dec, i, out = json.JSONDecoder(), 0, []
     while i < len(body):
@@ -220,8 +230,8 @@ async def hec_event(request: Request):
                          "host": obj.get("host", "")})
         if e is not None:
             out.append(e)
-    added = store.add_events(normalize(out))
-    return {"text": "Success", "code": 0, "accepted": len(out), "stored": added}
+    added = target.add_events(normalize(out))
+    return {"text": "Success", "code": 0, "accepted": len(out), "stored": added, "tenant": tenant}
 
 
 @app.get("/detections", response_class=HTMLResponse)

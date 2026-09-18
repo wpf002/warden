@@ -20,12 +20,12 @@ from .store import CaseStore
 def run(log_file: Path | None = None, kb: KnowledgeBase | None = None, analyzer=None,
         store: CaseStore | None = None, rerun: bool = False, only: list[str] | None = None,
         fmt: str | None = None, events=None) -> list[Case]:
+    store = store or CaseStore()
     if kb is None:
-        kb = KnowledgeBase()
+        kb = KnowledgeBase(tenant=store.tenant if store else None)
         kb.sync()
         kb.record_snapshot(store.engine if store else None)
     analyzer = analyzer or get_analyzer()
-    store = store or CaseStore()
 
     if events is None:
         events = load_file(log_file or settings.log_file, fmt=fmt)

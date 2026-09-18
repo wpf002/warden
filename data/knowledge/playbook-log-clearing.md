@@ -1,6 +1,6 @@
 # Playbook PB-024: Event Log Cleared
 
-Scope: Security or System log cleared (1102, 104), or a command that clears logs or removes audit policy. Detection is `log_clearing`, MITRE T1070.001, T1562.002.
+Scope: Security or System log cleared (1102, 104), or a command that clears logs or removes audit policy. Detection is `log_clearing`, MITRE T1685.005 (formerly T1070.001), T1562.002.
 
 ## Triage
 1. There is almost no legitimate reason to clear the Security log on a production system. Assume an intruder is covering tracks.

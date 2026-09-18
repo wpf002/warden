@@ -1,4 +1,4 @@
-"""T1562.008 Disable or Modify Cloud Logs: CloudTrail stopped or deleted, GuardDuty or
+"""T1685.002 Disable or Modify Cloud Logs: CloudTrail stopped or deleted, GuardDuty or
 Config switched off, flow logs removed. The attacker turning off the cameras."""
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ CALLS = {"StopLogging", "DeleteTrail", "DeleteFlowLogs", "DeleteDetector", "Disa
 class CloudLoggingDisabled(Detection):
     id = "cloud_logging_disabled"
     name = "Cloud audit logging disabled"
-    mitre = ["T1562.008"]
+    mitre = ["T1685.002"]
     event_kinds = ("cloud",)
     window_sec = 0
     playbook = "playbook-cloud-logging-disabled"

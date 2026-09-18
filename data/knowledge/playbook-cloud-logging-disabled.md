@@ -1,6 +1,6 @@
 # Playbook PB-036: Cloud Audit Logging Disabled
 
-Scope: CloudTrail stopped or deleted, GuardDuty or Config disabled, flow logs or log groups deleted. Detection is `cloud_logging_disabled`, MITRE T1562.008.
+Scope: CloudTrail stopped or deleted, GuardDuty or Config disabled, flow logs or log groups deleted. Detection is `cloud_logging_disabled`, MITRE T1685.002 (formerly T1562.008).
 
 ## Triage
 1. Treat as active compromise of the actor's identity until proven otherwise.

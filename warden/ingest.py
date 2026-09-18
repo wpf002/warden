@@ -13,6 +13,7 @@ from typing import Iterable, Iterator
 
 from .events import AuthEvent, Event, parse_event
 from .geo import country_for_ip
+from .governance import redact
 
 # ---- enrichment tables (stand-ins for GeoIP / CMDB lookups) ----
 ASSETS = {"vpn-gw-01": "crown_jewel", "ad-dc-01": "crown_jewel", "web-01": "standard", "jump-01": "standard"}
@@ -48,6 +49,7 @@ def normalize(events: Iterable[Event]) -> list[Event]:
             continue
         seen.add(k)
         e.geo = e.geo or (enrich_geo(e.source_ip) if e.source_ip else "")
+        redact(e)
         e.asset_tier = enrich_asset(e.host) if e.host else "unknown"
         out.append(e)
     out.sort(key=lambda e: e.ts)

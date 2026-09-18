@@ -97,7 +97,8 @@ def chunk(text: str, max_chars: int = 900) -> list[str]:
 
 
 class KnowledgeBase:
-    def __init__(self, persist: bool = True):
+    def __init__(self, persist: bool = True, tenant: str | None = None):
+        self.tenant = tenant or settings.tenant
         self.client = chromadb.PersistentClient(path=str(settings.chroma_dir)) if persist else chromadb.Client()
         self.ef = embedding_function()
         # Vectors from different embedding functions live in different spaces, so each
@@ -106,10 +107,12 @@ class KnowledgeBase:
         self._snapshot: str | None = None
         self._bm = None
         self._docs: dict = {}
+        self._ov: set[str] | None = None
 
-    def index_dir(self, path: Path | None = None, only: set[str] | None = None) -> int:
+    def index_dir(self, path: Path | None = None, only: set[str] | None = None, tenant: str = "global") -> int:
         path = path or settings.knowledge_dir
         ids, docs, metas = [], [], []
+        prefix = "" if tenant == "global" else f"t:{tenant}:"
         for f in sorted(path.glob("*.md")):
             if only is not None and f.stem not in only:
                 continue
@@ -117,9 +120,9 @@ class KnowledgeBase:
             sha = hashlib.sha1(text.encode()).hexdigest()[:12]
             doc_techs = techniques_in(text)
             for i, c in enumerate(chunk(text)):
-                ids.append(f"{f.stem}#{i}")
+                ids.append(f"{prefix}{f.stem}#{i}")
                 docs.append(c)
-                metas.append({"doc": f.stem, "chunk": i, "kind": f.stem.split("-")[0], "sha": sha,
+                metas.append({"doc": f.stem, "chunk": i, "kind": f.stem.split("-")[0], "sha": sha, "tenant": tenant,
                               **technique_meta(techniques_in(c) or doc_techs)})
         if ids:
             self.col.upsert(ids=ids, documents=docs, metadatas=metas)
@@ -127,16 +130,30 @@ class KnowledgeBase:
         return len(ids)
 
     def sync(self, path: Path | None = None) -> dict:
-        """Bring the index in line with the markdown on disk: embed new or edited docs,
-        drop chunks of deleted ones. Cheap when nothing changed (hash comparison only)."""
-        path = path or settings.knowledge_dir
+        """Bring the index in line with the markdown on disk - the global knowledge base plus
+        this tenant's overlay: embed new or edited docs, drop chunks of deleted ones. Cheap
+        when nothing changed (hash comparison only)."""
+        from .tenancy import knowledge_dirs
+        if path is not None:
+            return self._sync_one(path, "global")
+        out = {"indexed": [], "removed": []}
+        for label, d in knowledge_dirs(self.tenant):
+            r = self._sync_one(d, label)
+            out["indexed"] += r["indexed"]
+            out["removed"] += r["removed"]
+        return out
+
+    def _sync_one(self, path: Path, tenant: str) -> dict:
         on_disk = {f.stem: hashlib.sha1(f.read_text().encode()).hexdigest()[:12] for f in path.glob("*.md")}
         # ATT&CK and intel docs come from feeds, not from markdown on disk; sync leaves them alone
         got = self.col.get(where={"kind": {"$nin": ["attack", "intel"]}}, include=["metadatas"])
         indexed: dict[str, set[str]] = {}
         chunk_ids: dict[str, list[str]] = {}
         for i, m in zip(got["ids"], got["metadatas"]):
-            indexed.setdefault(m["doc"], set()).add(m.get("sha", ""))
+            if m.get("tenant", "global") != tenant or m.get("kind") == "learned" and tenant == "global":
+                continue
+            # a chunk from before tenancy has no tenant tag; re-embed it so it gets one
+            indexed.setdefault(m["doc"], set()).add(m.get("sha", "") if "tenant" in m else "untagged")
             chunk_ids.setdefault(m["doc"], []).append(i)
         changed = {d for d, h in on_disk.items() if indexed.get(d) != {h}}
         removed = {d for d in indexed if d not in on_disk}
@@ -144,7 +161,7 @@ class KnowledgeBase:
         if stale:
             self.col.delete(ids=stale)
         if changed:
-            self.index_dir(path, only=changed)
+            self.index_dir(path, only=changed, tenant=tenant)
         if stale or changed:
             self.invalidate()
         return {"indexed": sorted(changed), "removed": sorted(removed)}
@@ -187,10 +204,13 @@ class KnowledgeBase:
     def invalidate(self) -> None:
         self._snapshot = None
         self._bm = None
+        self._ov = None
 
-    def add_learned_case(self, doc_id: str, text: str) -> None:
-        """Feedback loop writes here. Also persisted to disk by feedback.py."""
-        self.col.upsert(ids=[f"{doc_id}#0"], documents=[text], metadatas=[{"doc": doc_id, "chunk": 0, "kind": "learned"}])
+    def add_learned_case(self, doc_id: str, text: str, tenant: str | None = None) -> None:
+        """Feedback loop writes here. Also persisted to the tenant's knowledge dir by feedback.py."""
+        t = tenant or self.tenant
+        self.col.upsert(ids=[f"t:{t}:{doc_id}#0"], documents=[text],
+                        metadatas=[{"doc": doc_id, "chunk": 0, "kind": "learned", "tenant": t}])
         self.invalidate()
 
     def _bm25(self):
@@ -210,7 +230,7 @@ class KnowledgeBase:
         n = self.col.count()
         if n == 0:
             return []
-        pool = min(n, max(k * 4, 20))
+        pool = min(n, max(k * 6, 30))
         vec: list[dict] = []
         if mode in ("hybrid", "vector"):
             res = self.col.query(query_texts=[query], n_results=pool, where=where or None)
@@ -218,9 +238,10 @@ class KnowledgeBase:
                 vec = [{"id": i, "text": d, "doc": m["doc"], "kind": m.get("kind", ""),
                         "technique": m.get("technique", ""), "distance": round(float(dist), 4)}
                        for i, d, m, dist in zip(res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0])]
+        vec = [d for d in vec if self._visible(d["id"])]
         if mode == "vector":
             return vec[:k]
-        kw = self._bm25().search(query, pool, where)
+        kw = [(i, sc) for i, sc in self._bm25().search(query, pool, where) if self._visible(i)]
         order = rrf([d["id"] for d in vec], [i for i, _ in kw]) if mode == "hybrid" else [i for i, _ in kw]
         by_id = {d["id"]: d for d in vec}
         out = []
@@ -232,6 +253,21 @@ class KnowledgeBase:
                 out.append({"id": i, "text": d, "doc": m["doc"], "kind": m.get("kind", ""),
                             "technique": m.get("technique", ""), "distance": None})
         return out
+
+    def _visible(self, chunk_id: str) -> bool:
+        """Global chunks, plus this tenant's own; a tenant document hides the global one it
+        shares a name with. Another tenant's chunks are never visible."""
+        if chunk_id.startswith("t:"):
+            return chunk_id.split(":", 2)[1] == self.tenant
+        stem = chunk_id.split("#", 1)[0]
+        return stem not in self._overrides()
+
+    def _overrides(self) -> set[str]:
+        if self._ov is None:
+            from .tenancy import tenant_dir
+            d = tenant_dir(self.tenant) / "knowledge"
+            self._ov = {f.stem for f in d.glob("*.md")} if d.exists() else set()
+        return self._ov
 
     def retrieve_by_technique(self, query: str, techniques: list[str], k: int = 3,
                               kind: str | None = None) -> list[dict]:

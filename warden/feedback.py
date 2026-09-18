@@ -105,9 +105,11 @@ def record_verdict(case: Case, verdict: str, note: str, store: CaseStore, kb: Kn
         + f"Recorded {datetime.now(timezone.utc).date().isoformat()}.\n"
     )
     doc_id = f"learned-{a.id.lower()}"
-    settings.knowledge_dir.mkdir(parents=True, exist_ok=True)
-    (settings.knowledge_dir / f"{doc_id}.md").write_text(text)
-    kb.add_learned_case(doc_id, text)
+    from .tenancy import tenant_dir
+    kdir = tenant_dir(store.tenant) / "knowledge"       # learned cases stay inside their tenant
+    kdir.mkdir(parents=True, exist_ok=True)
+    (kdir / f"{doc_id}.md").write_text(text)
+    kb.add_learned_case(doc_id, text, tenant=store.tenant)
     return case
 
 

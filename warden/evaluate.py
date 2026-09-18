@@ -164,6 +164,7 @@ class Report:
     misses: list[str] = field(default_factory=list)
     spurious: list[str] = field(default_factory=list)
     disagreements: list[str] = field(default_factory=list)
+    verification_failures: list[str] = field(default_factory=list)
     incidents_expected: int = 0
     incidents_merged: int = 0
     unmerged: list[str] = field(default_factory=list)
@@ -215,6 +216,7 @@ class Report:
             "unexpected_executes": self.unexpected_executes,
             "unmerged": self.unmerged,
             "disagreements": self.disagreements,
+            "verification_failures": self.verification_failures,
             "risk_violations": self.risk_violations,
             "missed": self.misses,
             "spurious": self.spurious,
@@ -312,8 +314,12 @@ def _score_subject(rep: Report, case: EvalCase, sub: Alert, label, expect_action
     if risk_max is not None and analysis.risk_score > risk_max:
         rep.risk_violations.append(f"{case.name}: {key} risk {analysis.risk_score} > {risk_max}")
 
+    from .governance import verify
+    problems = verify(sub, analysis, docs)
+    if problems:
+        rep.verification_failures.append(f"{case.name}: {key}: {'; '.join(problems[:3])}")
     verdicts: dict[str, str] = {}
-    for d in guardrails.evaluate(sub, analysis):
+    for d in guardrails.evaluate(sub, analysis, verified=not problems):
         # the most permissive outcome per action type is what the analyst would have seen happen
         rank = {"deny": 0, "approve": 1, "execute": 2}
         prev = verdicts.get(d.action.action)
@@ -354,7 +360,8 @@ def format_report(rep: Report, cases: list[EvalCase]) -> str:
         lines.append(f"model calls {rep.llm_calls}, cost ${rep.cost_usd:.4f}")
     for label, items in (("MISSED", rep.misses), ("SPURIOUS", rep.spurious),
                          ("UNEXPECTED EXECUTE", rep.unexpected_executes), ("RISK", rep.risk_violations),
-                         ("UNMERGED", rep.unmerged), ("DISAGREE", rep.disagreements)):
+                         ("UNMERGED", rep.unmerged), ("DISAGREE", rep.disagreements),
+                         ("UNVERIFIED", rep.verification_failures)):
         for it in items:
             lines.append(f"  {label:<20} {it}")
     return "\n".join(lines)

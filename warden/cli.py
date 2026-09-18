@@ -57,10 +57,25 @@ def cmd_run(a):
 def cmd_detections(a):
     from .detect import load_all
     rows = sorted(load_all().values(), key=lambda d: d.id)
+    if a.check_attack:
+        stale = attack_drift()
+        for rule, tid in stale:
+            print(f"STALE  {rule}: {tid} is not a current ATT&CK technique")
+        print(f"{len(stale)} stale mapping(s) against {settings.attack_dir}")
+        raise SystemExit(1 if stale else 0)
     print(f"{'id':<22}{'mitre':<22}{'kinds':<12}{'window':>8}  playbook")
     for d in rows:
         print(f"{d.id:<22}{','.join(d.mitre):<22}{','.join(d.event_kinds):<12}{d.window_sec:>8}  {d.playbook}")
     print(f"\n{len(rows)} detections registered")
+
+
+def attack_drift() -> list[tuple[str, str]]:
+    """Detection mappings that the ingested ATT&CK release no longer has (revoked or renamed)."""
+    from .detect import load_all
+    live = {p.stem for p in settings.attack_dir.glob("T*.md")}
+    if not live:
+        return []
+    return [(d.id, t) for d in load_all().values() for t in d.mitre if t not in live]
 
 
 def cmd_eval(a):
@@ -77,6 +92,16 @@ def cmd_eval(a):
         print(_json.dumps(rep.to_dict(), indent=2))
     else:
         print(evaluate.format_report(rep, cases))
+    if a.record:
+        import subprocess
+        from . import db
+        from .llm import get_analyzer
+        from .store import CaseStore
+        sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()[:40]
+        an = "none" if a.no_llm else getattr(get_analyzer(), "model", "") or type(get_analyzer()).__name__
+        with CaseStore().engine.begin() as c:
+            c.execute(db.eval_runs.insert().values(ts=db.now(), suite="real" if a.real else "synthetic", git_sha=sha,
+                                                   analyzer=an, metrics=rep.to_dict()))
     if a.fail_under is not None and rep.overall.f1 < a.fail_under:
         print(f"\nFAIL: overall f1 {rep.overall.f1:.3f} < {a.fail_under}")
         raise SystemExit(1)
@@ -115,6 +140,9 @@ def cmd_refresh(a):
     if not a.skip_intel:
         report["intel"] = intel.refresh(kb=kb)
     report["snapshot"] = kb.record_snapshot()
+    from .governance import retention
+    from .store import CaseStore as _CS
+    report["retention"] = retention(_CS())
     if not a.skip_baselines:
         from . import baselines
         from .store import CaseStore
@@ -241,6 +269,7 @@ def cmd_serve(a):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="warden")
+    p.add_argument("--tenant", default=None, help="tenant to act as (default WARDEN_TENANT)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     g = sub.add_parser("gen-logs", help="generate synthetic auth logs with embedded attacks")
@@ -262,6 +291,7 @@ def main(argv=None):
     r.set_defaults(fn=cmd_run)
 
     d = sub.add_parser("detections", help="list the registered detections")
+    d.add_argument("--check-attack", action="store_true", help="exit 1 if any mapping is not a current ATT&CK technique")
     d.set_defaults(fn=cmd_detections)
 
     e = sub.add_parser("eval", help="score the pipeline against labeled fixtures")
@@ -271,6 +301,7 @@ def main(argv=None):
     e.add_argument("--no-llm", action="store_true", help="detection metrics only, skip RAG and the model")
     e.add_argument("--json", action="store_true")
     e.add_argument("--fail-under", type=float, default=None, help="exit 1 if overall f1 is below this")
+    e.add_argument("--record", action="store_true", help="store the result for the console's eval history")
     e.set_defaults(fn=cmd_eval)
 
     ai = sub.add_parser("attack-ingest", help="pull the MITRE ATT&CK STIX bundle into the knowledge base")
@@ -324,6 +355,8 @@ def main(argv=None):
     s.set_defaults(fn=cmd_serve)
 
     a = p.parse_args(argv)
+    if a.tenant:
+        settings.tenant = a.tenant
     a.fn(a)
 
 

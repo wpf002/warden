@@ -8,16 +8,43 @@ LOW_IMPACT = {"create_ticket", "notify", "generate_report"}
 NO_OP = {"no_action"}
 
 
-def _automatable(action: str) -> tuple[bool, str]:
+def _automatable(action: str, pol) -> tuple[bool, str]:
     """Auto-execution needs the action on the allowlist AND a connector that can undo it."""
     from . import connectors
     if action in LOW_IMPACT:
         return True, ""
-    if action not in settings.auto_actions:
+    if action not in pol.auto_actions:
         return False, "action not on automation allowlist"
     if not connectors.can_rollback(action):
         return False, f"connector for {action} has no rollback, so it cannot auto-execute"
     return True, ""
+
+
+def canonical_ip(v: str) -> str | None:
+    """The one spelling of an address guardrails accept. Rejects CIDRs, padding, leading
+    zeros, and IPv4-mapped IPv6 - all ways to smuggle a safelisted address past a string match."""
+    import ipaddress
+    if not isinstance(v, str) or v != v.strip() or "/" in v:
+        return None
+    try:
+        a = ipaddress.ip_address(v)
+    except ValueError:
+        return None
+    if isinstance(a, ipaddress.IPv6Address) and a.ipv4_mapped:
+        return str(a.ipv4_mapped)
+    return str(a)
+
+
+def _safelisted(ip: str, safelist) -> bool:
+    import ipaddress
+    a = ipaddress.ip_address(ip)
+    for entry in safelist:
+        try:
+            if a in ipaddress.ip_network(entry.strip(), strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _is_anomaly(a: Alert) -> bool:
@@ -62,18 +89,38 @@ class Decision:
         return f"{self.verdict.upper():8} {self.action.action}({self.action.target}): {self.why}"
 
 
-def evaluate(alert: Alert, analysis: Analysis, bump: int = 0) -> list[Decision]:
-    """`bump` raises the auto-execute threshold for rules analysts keep marking FP (stats.threshold_bump)."""
+def evaluate(alert: Alert, analysis: Analysis, bump: int = 0, policy=None, verified: bool | None = None) -> list[Decision]:
+    """`bump` raises the auto-execute threshold for rules analysts keep marking FP (stats.threshold_bump).
+    `policy` is the tenant's guardrail policy (tenancy.policy); defaults to the global settings."""
+    from .tenancy import policy as _policy
+    pol = policy or _policy()
     out: list[Decision] = []
     for a in analysis.recommended_actions:
         if a.action in NO_OP:
             out.append(Decision(a, "deny", "no-op"))
             continue
-        if a.action == "block_ip" and a.target in settings.ip_safelist:
-            out.append(Decision(a, "deny", "target is on infrastructure safelist (SEC-012 §3)"))
+        if a.action == "block_ip":
+            canon = canonical_ip(a.target)
+            if canon is None:
+                out.append(Decision(a, "deny", "block target is not a single canonical IP address"))
+                continue
+            if canon != a.target:
+                out.append(Decision(a, "deny", f"block target {a.target!r} is not written canonically ({canon})"))
+                continue
+            if _safelisted(canon, pol.ip_safelist):
+                out.append(Decision(a, "deny", "target is on infrastructure safelist (SEC-012 §3)"))
+                continue
+        if a.action not in LOW_IMPACT and verified is False:
+            out.append(Decision(a, "approve", "analysis failed entity verification; a human checks it first"))
             continue
         if a.action == "block_ip" and a.target not in alert.all_ips():
             out.append(Decision(a, "deny", "model proposed an IP not in the alert evidence"))
+            continue
+        if a.action == "notify" and a.target and a.target not in pol.notify_targets:
+            out.append(Decision(a, "deny", f"notify target {a.target!r} is not an approved channel"))
+            continue
+        if a.action == "create_ticket" and a.target and a.target not in {alert.id, *(m.id for m in alert.members)}:
+            out.append(Decision(a, "deny", "ticket must reference this case"))
             continue
         if a.action == "lock_user" and a.target not in alert.users:
             out.append(Decision(a, "deny", "model proposed a user not in the alert evidence"))
@@ -84,13 +131,13 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0) -> list[Decision]:
         if a.action == "disable_access_key" and a.target not in _principals(alert):
             out.append(Decision(a, "deny", "model proposed a principal not in the alert evidence"))
             continue
-        if a.action in settings.human_approval_actions:
+        if a.action in pol.human_approval_actions:
             out.append(Decision(a, "approve", "requires analyst approval (SEC-012 §2)"))
             continue
         if a.action not in LOW_IMPACT and not _rule_evidenced(alert, a):
             out.append(Decision(a, "approve", "only an anomaly supports this target; anomaly-sourced actions need an analyst"))
             continue
-        ok, why_not = _automatable(a.action)
+        ok, why_not = _automatable(a.action, pol)
         if not ok:
             out.append(Decision(a, "approve", why_not))
             continue
@@ -104,7 +151,7 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0) -> list[Decision]:
         if analysis.false_positive_likelihood == "high":
             out.append(Decision(a, "approve", "model flagged high false-positive likelihood"))
             continue
-        threshold = settings.rule_thresholds.get(alert.rule, settings.auto_action_min_risk) + bump
+        threshold = pol.threshold(alert.rule) + bump
         why = f"{alert.rule} threshold" + (f", +{bump} for its false-positive record" if bump else "")
         if analysis.risk_score >= threshold:
             out.append(Decision(a, "execute", f"risk {analysis.risk_score} >= {threshold} ({why})"))

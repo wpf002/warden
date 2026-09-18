@@ -31,6 +31,14 @@ class Settings:
     database_url: str = field(default_factory=lambda: _env("WARDEN_DATABASE_URL", ""))
     tenant: str = field(default_factory=lambda: _env("WARDEN_TENANT", "default"))
 
+    # governance (warden/governance.py)
+    redact: str = field(default_factory=lambda: _env("WARDEN_REDACT", ""))          # email,card,ssn,phone
+    retention_events_days: int = field(default_factory=lambda: int(_env("WARDEN_RETENTION_EVENTS_DAYS", "90")))
+    retention_cases_days: int = field(default_factory=lambda: int(_env("WARDEN_RETENTION_CASES_DAYS", "365")))
+    retention_llm_days: int = field(default_factory=lambda: int(_env("WARDEN_RETENTION_LLM_DAYS", "365")))
+    retention_audit_days: int = field(default_factory=lambda: int(_env("WARDEN_RETENTION_AUDIT_DAYS", "730")))
+    verify_model: str = field(default_factory=lambda: _env("WARDEN_VERIFY_MODEL", ""))   # e.g. claude-haiku-4-5
+
     # dashboard / API auth (see warden/auth.py)
     auth_mode: str = field(default_factory=lambda: _env("WARDEN_AUTH", "none"))
     users: str = field(default_factory=lambda: _env("WARDEN_USERS", ""))
@@ -44,6 +52,7 @@ class Settings:
     exclusion_days: int = field(default_factory=lambda: int(_env("WARDEN_EXCLUSION_DAYS", "30")))
     otx_api_key: str = field(default_factory=lambda: _env("OTX_API_KEY", ""))
     hec_token: str = field(default_factory=lambda: _env("WARDEN_HEC_TOKEN", ""))
+    hec_tokens: str = field(default_factory=lambda: _env("WARDEN_HEC_TOKENS", ""))    # "tenant:token,..."
 
     # detection tuning
     bf_threshold: int = field(default_factory=lambda: int(_env("WARDEN_BF_THRESHOLD", "10")))
@@ -105,6 +114,9 @@ class Settings:
     # actions that may auto-execute (on top of tickets/notifications), subject to rollback support
     auto_actions: set[str] = field(
         default_factory=lambda: {a.strip() for a in _env("WARDEN_AUTO_ACTIONS", "block_ip,isolate_host,disable_access_key").split(",") if a.strip()}
+    )
+    notify_targets: set[str] = field(
+        default_factory=lambda: {a.strip() for a in _env("WARDEN_NOTIFY_TARGETS", "soc,oncall").split(",") if a.strip()}
     )
     ip_safelist: set[str] = field(
         default_factory=lambda: {a.strip() for a in _env("WARDEN_IP_SAFELIST", "10.0.0.1,10.0.0.2").split(",") if a.strip()}

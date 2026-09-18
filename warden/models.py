@@ -111,4 +111,5 @@ class Case(BaseModel):
     incident_id: Optional[str] = None
     prompt_version: str = ""
     kb_snapshot: str = ""
+    verification: list[str] = Field(default_factory=list)   # problems found checking the analysis
     model: str = ""

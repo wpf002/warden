@@ -166,6 +166,6 @@ def test_phase4_exit_bar():
     from warden.detections import REGISTRY, load_all
     load_all()
     assert len(REGISTRY) >= 30
-    tactics = {"T1110", "T1078", "T1059", "T1003", "T1021", "T1071", "T1486", "T1562", "T1530"}
+    tactics = {"T1110", "T1078", "T1059", "T1003", "T1021", "T1071", "T1486", "T1685", "T1530"}
     assert tactics <= {t.split(".")[0] for d in REGISTRY.values() for t in d.mitre}
     assert rep.overall.precision >= 0.9 and rep.overall.recall >= 0.9 and rep.merge_rate == 1.0

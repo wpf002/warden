@@ -1,6 +1,6 @@
 # Playbook PB-025: Security Tooling Disabled or Bypassed
 
-Scope: Defender real-time protection disabled or given exclusions, security services stopped, AMSI bypass strings, the host firewall turned off. Detection is `security_tool_tamper`, MITRE T1562.001, T1562.004.
+Scope: Defender real-time protection disabled or given exclusions, security services stopped, AMSI bypass strings, the host firewall turned off. Detection is `security_tool_tamper`, MITRE T1685 (formerly T1562.001), T1562.004.
 
 ## Triage
 1. Tampering is preparation. Look for what was run in the minutes after protection went off.
