@@ -22,6 +22,11 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Fetch real attack recordings (hash-pinned)
         run: python scripts/fetch_real_samples.py
+      - name: Fetch vendor samples and API specs (hash-pinned)
+        run: |
+          python scripts/fetch_crowdstrike_samples.py
+          python scripts/fetch_baseline_logs.py
+          python scripts/fetch_api_specs.py
       - name: Tests, including the red-team suite
         run: pytest -q
       - name: Synthetic eval (fails below F1 0.95)

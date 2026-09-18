@@ -15,3 +15,4 @@ web/*.tsbuildinfo
 .claude/
 deploy/terraform/**/.terraform/
 *.tfstate*
+data/specs/
