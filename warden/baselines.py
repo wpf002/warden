@@ -282,11 +282,13 @@ def save_profiles(store, profiles: dict[tuple[str, str], Profile]) -> int:
     return len(profiles)
 
 
-def rebuild(store, days: int | None = None) -> int:
-    """Nightly: recompute every profile from the stored events of the last N days."""
+def rebuild(store, days: int | None = None, until=None) -> int:
+    """Nightly: recompute every profile from the stored events of the N days before `until`
+    (default now). Pass the last event time to build from historical logs."""
     from datetime import datetime, timedelta, timezone
-    since = datetime.now(timezone.utc) - timedelta(days=days or settings.baseline_days)
-    profiles = build_profiles(store.events(since=since))
+    until = until or datetime.now(timezone.utc)
+    since = until - timedelta(days=days or settings.baseline_days)
+    profiles = build_profiles(store.events(since=since, until=until + timedelta(seconds=1)))
     return save_profiles(store, profiles)
 
 

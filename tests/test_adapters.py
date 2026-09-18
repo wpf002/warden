@@ -101,3 +101,15 @@ def test_real_kerberos_spray_detected():
 def test_real_windows_group_add_parses():
     evs = list(iter_events(REAL / "Network_Service_Guest_added_to_admins_4732.evtx"))
     assert all(e.kind == "identity" and e.change_type == "group_add" and e.group == "Administrators" for e in evs)
+
+
+def test_sshd_year_rollover(tmp_path):
+    from datetime import datetime, timezone
+    from warden.adapters import sshd
+    f = tmp_path / "auth.log"
+    f.write_text("Dec 31 23:59:00 h sshd[1]: Failed password for root from 5.6.7.8 port 22 ssh2\n"
+                 "Jan 01 00:01:00 h sshd[1]: Accepted password for bob from 5.6.7.8 port 22 ssh2\n")
+    a, b = list(sshd.parse(f))
+    assert b.ts.year == a.ts.year + 1 and b.ts > a.ts
+    assert b.ts <= datetime.now(timezone.utc).replace(year=datetime.now().year + 1)
+    assert a.ts < datetime.now(timezone.utc)

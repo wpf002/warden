@@ -179,13 +179,30 @@ def cmd_replay(a):
         print(f"  {'=' if o == n else '!'} {name:14} {o}  ->  {n}")
 
 
+def cmd_ingest(a):
+    from .ingest import load_file
+    from .store import CaseStore
+    evs = load_file(Path(a.log), a.format)
+    n = CaseStore().add_events(evs)
+    span = f", {evs[0].ts:%Y-%m-%d} to {evs[-1].ts:%Y-%m-%d}" if evs else ""
+    print(f"stored {n} of {len(evs)} events{span}")
+
+
 def cmd_baseline(a):
     from . import baselines
     from .store import CaseStore
     store = CaseStore()
     if a.action == "rebuild":
-        n = baselines.rebuild(store, a.days)
-        print(f"rebuilt {n} profiles from the last {a.days or settings.baseline_days} days of events")
+        until = None
+        if a.until == "latest":
+            evs = store.events()
+            until = evs[-1].ts if evs else None
+        elif a.until:
+            from datetime import datetime
+            until = datetime.fromisoformat(a.until)
+        n = baselines.rebuild(store, a.days, until)
+        end = f"up to {until:%Y-%m-%d}" if until else "up to now"
+        print(f"rebuilt {n} profiles from {a.days or settings.baseline_days} days of events {end}")
         return
     profiles = baselines.load_profiles(store)
     if a.entity:
@@ -347,9 +364,15 @@ def main(argv=None):
     rp.add_argument("case_id")
     rp.set_defaults(fn=cmd_replay)
 
+    ig = sub.add_parser("ingest", help="store a log file's events without detection or LLM calls")
+    ig.add_argument("--log", required=True)
+    ig.add_argument("--format", default=None)
+    ig.set_defaults(fn=cmd_ingest)
+
     bl = sub.add_parser("baseline", help="behavioral baselines: rebuild (nightly) or show")
     bl.add_argument("action", choices=["rebuild", "show"])
     bl.add_argument("--days", type=int, default=None)
+    bl.add_argument("--until", default=None, help="'latest' (last stored event) or an ISO time; default now")
     bl.add_argument("--type", choices=["user", "host"], default="user")
     bl.add_argument("--entity", default=None)
     bl.set_defaults(fn=cmd_baseline)
