@@ -1,0 +1,29 @@
+{
+  "name": "real: Services installed that run cmd",
+  "description": "Services installed that run cmd.exe (7045), remote service execution. Two of three installs point at shells.",
+  "events": "../../real/LM_Remote_Service02_7045.evtx",
+  "alerts": [
+    {
+      "rule": "persistence_mechanism",
+      "match": {},
+      "label": "true_positive"
+    },
+    {
+      "rule": "persistence_mechanism",
+      "match": {},
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "persistence_mechanism"
+      ],
+      "label": "true_positive",
+      "expect_actions": {
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+-r requirements.txt
+moto[server,ec2,iam]>=5   # AWS emulator for connector tests and the sandbox script

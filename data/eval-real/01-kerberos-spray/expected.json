@@ -2,10 +2,26 @@
   "name": "real: Kerberos password spray with one hit",
   "description": "EVTX-ATTACK-SAMPLES kerberos_pwd_spray_4771. Nine accounts fail pre-auth or do not exist from 172.16.66.1 inside 20 ms; then 'normal' gets a TGT. Internal source, so the attacker is already on the network.",
   "events": "../../real/kerberos_pwd_spray_4771.evtx",
-  "alerts": [{
-    "rule": "password_spray", "match": {"source_ip": "172.16.66.1"},
-    "label": "true_positive", "risk_min": 80,
-    "expect_actions": {"lock_user": "approve", "create_ticket": "execute", "notify": "execute"},
-    "note": "The account that succeeded is the one to lock. Perimeter blocking an internal IP does nothing; host isolation is the containment, which is a Phase 4 connector."
-  }]
+  "alerts": [
+    {
+      "rule": "password_spray",
+      "match": {
+        "source_ip": "172.16.66.1"
+      },
+      "label": "true_positive",
+      "risk_min": 80,
+      "expect_actions": {
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "The account that succeeded is the one to lock. Perimeter blocking an internal IP does nothing; host isolation is the containment, which is a Phase 4 connector."
+    },
+    {
+      "rule": "log_clearing",
+      "match": {},
+      "label": "true_positive",
+      "note": "the recording starts with the tester clearing the Security log (1102); that is a real clear"
+    }
+  ]
 }

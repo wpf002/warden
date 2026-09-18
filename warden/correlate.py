@@ -31,9 +31,25 @@ def pivot_users(a: Alert) -> list[str]:
     return a.users if len(a.users) <= MAX_KEYED_USERS else []
 
 
+SYSTEM_USERS = {"system", "local service", "network service", "localsystem", "anonymous logon", "-", ""}
+HOST_KINDS = {"process", "file", "network"}
+
+
+def _host_scoped(rule: str) -> bool:
+    """Endpoint and network alerts are about a machine; a shared host links them. Identity
+    alerts name hosts too (the DC, the VPN gateway) but those are shared by everyone."""
+    from .detections import REGISTRY, load_all
+    load_all()
+    d = REGISTRY.get(rule)
+    return bool(d and set(d.event_kinds) & HOST_KINDS and "auth" not in d.event_kinds)
+
+
 def _keys(a: Alert) -> set[str]:
     keys = {f"ip:{ip}" for ip in a.all_ips() if ip and ip not in settings.ip_safelist}
-    keys |= {f"user:{norm_user(u)}" for u in pivot_users(a) if u}
+    keys |= {f"user:{norm_user(u)}" for u in pivot_users(a)
+             if norm_user(u) not in SYSTEM_USERS and not u.endswith("$")}
+    if _host_scoped(a.rule):
+        keys |= {f"host:{h.lower()}" for h in a.hosts if h}
     return keys
 
 
@@ -70,6 +86,12 @@ def correlate(alerts: list[Alert], window_sec: int | None = None) -> list[Alert]
 
 
 STAGE = {  # rough kill-chain order, used to title the chain
+    "suspicious_parent_child": 2, "lolbin_abuse": 2, "encoded_powershell": 2, "intel_ioc_match": 3, "beaconing": 3,
+    "dns_tunneling": 3, "credential_dumping": 4, "persistence_mechanism": 4, "security_tool_tamper": 4,
+    "log_clearing": 4, "lateral_movement_fanout": 5, "port_scan": 3, "data_exfiltration": 6,
+    "ransomware_precursor": 6, "mass_file_encryption": 7, "mailbox_forwarding_rule": 4, "iam_admin_grant": 5,
+    "new_access_key": 5, "public_bucket": 6, "cloud_logging_disabled": 4, "unusual_region": 5,
+    "console_login_no_mfa": 3,
     "credential_stuffing": 1, "password_spray": 1, "brute_force": 1, "lockout_storm": 1, "mfa_fatigue": 2,
     "impossible_travel": 3, "new_geo_login": 3, "dormant_account": 3, "session_anomaly": 3,
     "service_account_interactive": 3, "mfa_method_change": 4, "password_reset_abuse": 4,
@@ -83,7 +105,10 @@ def build_incident(members: list[Alert]) -> Alert:
     users = list(dict.fromkeys(u for m in members for u in m.users))
     chain = list(dict.fromkeys(m.rule for m in members))
     mitre = list(dict.fromkeys(t for m in members for t in m.mitre))
-    focus = Counter(norm_user(u) for m in members for u in pivot_users(m)).most_common(1)
+    focus = Counter(norm_user(u) for m in members for u in pivot_users(m)
+                    if norm_user(u) not in SYSTEM_USERS and not u.endswith("$")).most_common(1)
+    if not focus:
+        focus = Counter(h for m in members for h in m.hosts).most_common(1)
     who = focus[0][0] if focus else (ips.most_common(1)[0][0] if ips else "?")
     timeline = sorted(({**e, "alert": m.id, "rule": m.rule} for m in members for e in m.evidence),
                       key=lambda e: e.get("ts", ""))

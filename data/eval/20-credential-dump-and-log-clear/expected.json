@@ -1,0 +1,43 @@
+{
+  "name": "comsvcs MiniDump of LSASS, then the Security log cleared",
+  "description": "Credential theft followed by anti-forensics on the same workstation.",
+  "alerts": [
+    {
+      "rule": "credential_dumping",
+      "match": {
+        "host": "ws-31"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "lolbin_abuse",
+      "match": {
+        "host": "ws-31"
+      },
+      "label": "true_positive",
+      "note": "rundll32 running comsvcs from a user-writable path matches the rundll32 LOLBin pattern too"
+    },
+    {
+      "rule": "log_clearing",
+      "match": {
+        "host": "ws-31"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "credential_dumping",
+        "log_clearing"
+      ],
+      "label": "true_positive",
+      "risk_min": 90,
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

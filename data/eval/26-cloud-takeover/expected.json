@@ -1,0 +1,58 @@
+{
+  "name": "console login without MFA -> access key for an admin -> AdministratorAccess -> trail stopped -> GPUs in Mumbai",
+  "description": "A leaked IAM password used end to end in nine minutes.",
+  "alerts": [
+    {
+      "rule": "console_login_no_mfa",
+      "match": {
+        "user": "deploy-bot"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "new_access_key",
+      "match": {
+        "user": "deploy-bot"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "iam_admin_grant",
+      "match": {
+        "user": "deploy-bot"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "cloud_logging_disabled",
+      "match": {
+        "user": "deploy-bot"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "unusual_region",
+      "match": {
+        "user": "deploy-bot"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "console_login_no_mfa",
+        "iam_admin_grant",
+        "cloud_logging_disabled",
+        "unusual_region"
+      ],
+      "label": "true_positive",
+      "risk_min": 90,
+      "expect_actions": {
+        "disable_access_key": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

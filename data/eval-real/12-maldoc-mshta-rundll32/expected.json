@@ -1,0 +1,31 @@
+{
+  "name": "real: A Word document launches an HTA through ShellBrowserWindow (so explorer",
+  "description": "A Word document launches an HTA through ShellBrowserWindow (so explorer.exe is the parent), which runs rundll32 on a .jpg from Users\\Public.",
+  "events": "../../real/maldoc_mshta_via_shellbrowserwind_rundll32.evtx",
+  "alerts": [
+    {
+      "rule": "lolbin_abuse",
+      "match": {},
+      "label": "true_positive"
+    },
+    {
+      "rule": "lolbin_abuse",
+      "match": {},
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "lolbin_abuse"
+      ],
+      "label": "true_positive",
+      "risk_min": 80,
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

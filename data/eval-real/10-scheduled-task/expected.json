@@ -1,0 +1,16 @@
+{
+  "name": "real: Administrator registers and deletes a randomly named task (4698, 4699), the Impacket atexec pattern",
+  "description": "Administrator registers and deletes a randomly named task (4698, 4699), the Impacket atexec pattern.",
+  "events": "../../real/temp_scheduled_task_4698_4699.evtx",
+  "alerts": [
+    {
+      "rule": "persistence_mechanism",
+      "match": {},
+      "label": "true_positive",
+      "expect_actions": {
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

@@ -65,6 +65,16 @@ class Settings:
         "AdministratorAccess"))
     change_window: str = field(default_factory=lambda: _env("WARDEN_CHANGE_WINDOW", ""))
     history_days: int = field(default_factory=lambda: int(_env("WARDEN_HISTORY_DAYS", "90")))
+    encryption_min_files: int = field(default_factory=lambda: int(_env("WARDEN_ENCRYPTION_MIN_FILES", "50")))
+    beacon_min_connections: int = field(default_factory=lambda: int(_env("WARDEN_BEACON_MIN_CONNECTIONS", "8")))
+    beacon_max_cv: float = field(default_factory=lambda: float(_env("WARDEN_BEACON_MAX_CV", "0.15")))
+    dns_min_unique: int = field(default_factory=lambda: int(_env("WARDEN_DNS_MIN_UNIQUE", "30")))
+    dns_txt_min: int = field(default_factory=lambda: int(_env("WARDEN_DNS_TXT_MIN", "50")))
+    lateral_min_hosts: int = field(default_factory=lambda: int(_env("WARDEN_LATERAL_MIN_HOSTS", "5")))
+    scan_min_targets: int = field(default_factory=lambda: int(_env("WARDEN_SCAN_MIN_TARGETS", "20")))
+    exfil_bytes: int = field(default_factory=lambda: int(_env("WARDEN_EXFIL_BYTES", str(500 * 1024 * 1024))))
+    aws_regions: str = field(default_factory=lambda: _env("WARDEN_AWS_REGIONS", "us-east-1,us-west-2"))
+    email_domains: str = field(default_factory=lambda: _env("WARDEN_EMAIL_DOMAINS", "corp.example"))
     correlation_window_sec: int = field(default_factory=lambda: int(_env("WARDEN_CORRELATION_WINDOW_SEC", "7200")))
     travel_max_kmh: int = field(default_factory=lambda: int(_env("WARDEN_TRAVEL_MAX_KMH", "900")))
     travel_min_km: int = field(default_factory=lambda: int(_env("WARDEN_TRAVEL_MIN_KM", "500")))
@@ -81,6 +91,13 @@ class Settings:
     )
     human_approval_actions: set[str] = field(
         default_factory=lambda: {a.strip() for a in _env("WARDEN_HUMAN_APPROVAL_ACTIONS", "lock_user").split(",") if a.strip()}
+    )
+    # response connectors (warden/connectors): "action=connector,..."; unmapped actions use the mock
+    connectors: str = field(default_factory=lambda: _env("WARDEN_CONNECTORS", ""))
+    live_actions: bool = field(default_factory=lambda: _env("WARDEN_LIVE_ACTIONS", "0") in ("1", "true", "yes"))
+    # actions that may auto-execute (on top of tickets/notifications), subject to rollback support
+    auto_actions: set[str] = field(
+        default_factory=lambda: {a.strip() for a in _env("WARDEN_AUTO_ACTIONS", "block_ip,isolate_host,disable_access_key").split(",") if a.strip()}
     )
     ip_safelist: set[str] = field(
         default_factory=lambda: {a.strip() for a in _env("WARDEN_IP_SAFELIST", "10.0.0.1,10.0.0.2").split(",") if a.strip()}

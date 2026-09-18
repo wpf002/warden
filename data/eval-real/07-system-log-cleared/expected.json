@@ -1,0 +1,18 @@
+{
+  "name": "real: System log cleared by user01 (104)",
+  "description": "System log cleared by user01 (104).",
+  "events": "../../real/DE_104_system_log_cleared.evtx",
+  "alerts": [
+    {
+      "rule": "log_clearing",
+      "match": {},
+      "label": "true_positive",
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "PB-024: a cleared Security or System log on a production host is presumed intrusion; isolate."
+    }
+  ]
+}

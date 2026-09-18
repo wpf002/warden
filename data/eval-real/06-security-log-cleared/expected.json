@@ -1,0 +1,18 @@
+{
+  "name": "real: Security log cleared by user01 (1102)",
+  "description": "Security log cleared by user01 (1102). Also contains 110 routine 4663 object-access events that must not fire.",
+  "events": "../../real/DE_1102_security_log_cleared.evtx",
+  "alerts": [
+    {
+      "rule": "log_clearing",
+      "match": {},
+      "label": "true_positive",
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "PB-024: a cleared Security or System log on a production host is presumed intrusion; isolate."
+    }
+  ]
+}

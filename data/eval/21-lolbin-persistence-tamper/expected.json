@@ -1,0 +1,43 @@
+{
+  "name": "certutil download, scheduled task, Defender switched off",
+  "description": "Payload fetched with a signed binary, persisted as a task, then protection disabled.",
+  "alerts": [
+    {
+      "rule": "lolbin_abuse",
+      "match": {
+        "host": "ws-44"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "persistence_mechanism",
+      "match": {
+        "host": "ws-44"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "security_tool_tamper",
+      "match": {
+        "host": "ws-44"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "lolbin_abuse",
+        "persistence_mechanism",
+        "security_tool_tamper"
+      ],
+      "label": "true_positive",
+      "risk_min": 85,
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

@@ -55,36 +55,20 @@ identity header trusted only from `WARDEN_TRUSTED_PROXIES`). Roles: viewer, anal
 
 ## Detections
 
-Each detection is one file in `warden/detections/`, registered by decorator, with a
-playbook in the knowledge base and a labeled fixture in `data/eval/`.
+36 rules, one file each in `warden/detections/`, across credential access, initial access,
+execution, persistence, defense evasion, discovery, lateral movement, collection, command
+and control, exfiltration, and impact. `python -m warden.cli detections` lists them.
 
-| Detection | MITRE | Signal |
-|---|---|---|
-| `brute_force` | T1110.001 | many failures from one IP against few accounts |
-| `password_spray` | T1110.003 | 5+ distinct accounts failing from one IP in the window, few tries each |
-| `credential_stuffing` | T1110.004 | many accounts, many IPs, few tries per IP, shared user agent or /24 |
-| `lockout_storm` | T1110 | 5+ accounts locked out within 15 minutes |
-| `mfa_fatigue` | T1621 | run of denied/timed-out MFA pushes, scored higher if an approval follows |
-| `mfa_method_change` | T1556.006 | new MFA factor within an hour of failures, denials, or an unfamiliar country |
-| `impossible_travel` | T1078 | two successes for one user from places no one could travel between (coordinates when the source has them) |
-| `new_geo_login` | T1078 | first-seen country for a user with enough history; asset tier weights it |
-| `dormant_account` | T1078 | success on an account idle 60+ days |
-| `service_account_interactive` | T1078.002 | svc-*/sa-* account with an interactive or RDP logon |
-| `session_anomaly` | T1550.004 | one session id from a second IP and a different client |
-| `privileged_group_add` | T1098, T1078.004 | add to Domain Admins, Global Administrator, Okta Super Admins, ... |
-| `account_create_then_privilege` | T1136 | new account made privileged within an hour |
-| `password_reset_abuse` | T1098 | 3+ resets of one account, or one operator resetting 3+ accounts |
+| Domain | Rules |
+|---|---|
+| Identity | brute_force, password_spray, credential_stuffing, lockout_storm, mfa_fatigue, mfa_method_change, impossible_travel, new_geo_login, dormant_account, service_account_interactive, session_anomaly, privileged_group_add, account_create_then_privilege, password_reset_abuse |
+| Endpoint | suspicious_parent_child, lolbin_abuse, encoded_powershell, credential_dumping, persistence_mechanism, log_clearing, security_tool_tamper, ransomware_precursor, mass_file_encryption |
+| Network | beaconing, dns_tunneling, lateral_movement_fanout, port_scan, data_exfiltration, intel_ioc_match |
+| Cloud / email | iam_admin_grant, new_access_key, public_bucket, cloud_logging_disabled, unusual_region, console_login_no_mfa, mailbox_forwarding_rule |
 
-Alerts that share a user or IP within two hours are merged by `warden/correlate.py` into
-one incident, and the model analyzes the incident: "spray -> success -> new MFA factor ->
-Domain Admins" is one case with one timeline.
-
-```bash
-python -m warden.cli detections            # list the registry
-python -m warden.cli run --detections mfa_fatigue,impossible_travel
-```
-
-Adding one means adding a file:
+Alerts that share a user or IP (and, for endpoint and network alerts, a host) within two
+hours merge into one incident, and the model analyzes the incident. "Phish -> macro
+PowerShell -> beacon -> SMB fan-out -> new domain admin" is one case with one timeline.
 
 ```python
 @register
@@ -96,6 +80,31 @@ class MyRule(Detection):
 
     def run(self, events): ...   # -> list[Alert], deterministic
 ```
+
+## Response connectors
+
+`warden/connectors/`, mapped per action with `WARDEN_CONNECTORS`
+(e.g. `block_ip=aws_nacl,lock_user=okta,isolate_host=crowdstrike,notify=slack,create_ticket=jira`).
+Unmapped actions use the mock. Real connectors run dry unless `WARDEN_LIVE_ACTIONS=1`.
+
+| Action | Connectors |
+|---|---|
+| block_ip | aws_nacl (NACL deny), paloalto (User-ID tag with TTL) |
+| lock_user | okta, entra, aws_iam |
+| isolate_host | crowdstrike, defender |
+| disable_access_key | aws_iam |
+| notify | slack, pagerduty, smtp |
+| create_ticket | jira, servicenow |
+
+Every connector returns a receipt that carries what rollback needs; analysts can roll an
+action back from the case page. Guardrails never auto-execute an action whose connector
+cannot roll back, never auto-isolate a crown-jewel host, and bind every target (IP, user,
+host, access key) to the evidence.
+
+`python scripts/sandbox_connectors.py` runs aws_nacl and aws_iam live against moto (an AWS
+API emulator) and smtp against Mailpit, verifying each change and each rollback through
+the service's API. Okta, Entra, CrowdStrike, Defender, PAN-OS, Slack, PagerDuty, Jira, and
+ServiceNow are tested against their documented request shapes, not live tenants.
 
 ## Eval
 
@@ -113,14 +122,14 @@ should decide. Reported: detection precision/recall/F1 per rule, risk-score cali
 (Brier against the TP/FP labels), action-decision agreement with the analyst, and
 retrieval hit rate. Regenerate the fixtures with `python scripts/make_eval_fixtures.py`.
 
-Current numbers (16 synthetic cases, mock analyzer, MiniLM embeddings; `--real` runs 4 real Windows recordings):
+Current numbers (27 synthetic cases, 13 real Windows recordings, mock analyzer, MiniLM embeddings):
 
 | Metric | Synthetic | Real |
 |---|---|---|
-| Detection precision / recall | 1.000 / 1.000 (25 alerts, 14 rules) | 1.000 / 1.000 (3 alerts) |
-| Incidents merged as one | 8/8 | 1/1 |
-| Action agreement with analyst | 43/43 | 4/5 |
-| Retrieval hit rate (playbook in top 3) | 14/14 hybrid, 13/14 vector only | 2/2 |
+| Detection precision / recall | 1.000 / 1.000 (51 alerts) | 1.000 / 1.000 (19 alerts) |
+| Incidents merged as one | 13/13 | 4/4 |
+| Action agreement with analyst | 77/77 | 29/30 |
+| Retrieval hit rate (playbook in top 3) | 25/25 | 12/12 |
 
 The mock analyzer's risk scores are placeholders; calibration numbers that mean
 anything come from running the suite against Claude.

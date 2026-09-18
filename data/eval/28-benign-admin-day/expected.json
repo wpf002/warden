@@ -1,0 +1,5 @@
+{
+  "name": "ordinary admin activity that resembles six Phase 4 rules",
+  "description": "Vendor service install, Excel printing, a jittery update checker, and routine AWS work with MFA.",
+  "alerts": []
+}

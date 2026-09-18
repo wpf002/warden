@@ -1,0 +1,21 @@
+{
+  "name": "840 MB to MEGA with rclone; the nightly S3 backup stays quiet",
+  "description": "New destination and large volume fires; the known backup destination does not.",
+  "alerts": [
+    {
+      "rule": "data_exfiltration",
+      "match": {
+        "source_ip": "198.51.100.200"
+      },
+      "label": "true_positive",
+      "risk_min": 80,
+      "expect_actions": {
+        "block_ip": "execute",
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ],
+  "history": "history.jsonl"
+}

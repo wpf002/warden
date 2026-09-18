@@ -1,0 +1,17 @@
+{
+  "name": "workstation scanning a server",
+  "description": "22 ports on one server in 22 seconds, nearly all rejected.",
+  "alerts": [
+    {
+      "rule": "port_scan",
+      "match": {
+        "source_ip": "10.0.4.60"
+      },
+      "label": "true_positive",
+      "expect_actions": {
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

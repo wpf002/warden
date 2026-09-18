@@ -1,0 +1,18 @@
+{
+  "name": "real: mimikatz sekurlsa::logonpasswords opening LSASS (Sysmon 10)",
+  "description": "mimikatz sekurlsa::logonpasswords opening LSASS (Sysmon 10). Read access to LSASS from an unexpected process.",
+  "events": "../../real/sysmon_10_lsass_mimikatz_sekurlsa_logonpasswords.evtx",
+  "alerts": [
+    {
+      "rule": "credential_dumping",
+      "match": {},
+      "label": "true_positive",
+      "risk_min": 85,
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

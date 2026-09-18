@@ -137,6 +137,39 @@ class MockAnalyzer:
                             ["lock_user", "block_ip", "create_ticket", "notify"]),
         "password_reset_abuse": ("T1098 Account Manipulation", 72, "high", "medium", ["create_ticket", "notify"]),
         "lockout_storm": ("T1110 Brute Force", 68, "high", "low", ["create_ticket", "notify"]),
+        "suspicious_parent_child": ("T1204.002 User Execution: Malicious File", 84, "critical", "low",
+                                    ["isolate_host", "create_ticket", "notify"]),
+        "lolbin_abuse": ("T1218 System Binary Proxy Execution", 80, "high", "low", ["isolate_host", "create_ticket", "notify"]),
+        "encoded_powershell": ("T1059.001 Command and Scripting Interpreter: PowerShell", 78, "high", "medium",
+                               ["isolate_host", "create_ticket", "notify"]),
+        "credential_dumping": ("T1003.001 OS Credential Dumping: LSASS Memory", 92, "critical", "low",
+                               ["isolate_host", "create_ticket", "notify"]),
+        "persistence_mechanism": ("T1543.003 Create or Modify System Process: Windows Service", 74, "high", "medium",
+                                  ["create_ticket", "notify"]),
+        "log_clearing": ("T1070.001 Indicator Removal: Clear Windows Event Logs", 82, "high", "low",
+                         ["isolate_host", "create_ticket", "notify"]),
+        "security_tool_tamper": ("T1562.001 Impair Defenses: Disable or Modify Tools", 85, "critical", "low",
+                                 ["isolate_host", "create_ticket", "notify"]),
+        "ransomware_precursor": ("T1490 Inhibit System Recovery", 95, "critical", "low", ["isolate_host", "create_ticket", "notify"]),
+        "mass_file_encryption": ("T1486 Data Encrypted for Impact", 98, "critical", "low", ["isolate_host", "create_ticket", "notify"]),
+        "beaconing": ("T1071 Application Layer Protocol", 76, "high", "medium", ["block_ip", "create_ticket", "notify"]),
+        "dns_tunneling": ("T1071.004 Application Layer Protocol: DNS", 80, "high", "low", ["isolate_host", "create_ticket", "notify"]),
+        "lateral_movement_fanout": ("T1021 Remote Services", 82, "high", "low", ["isolate_host", "create_ticket", "notify"]),
+        "port_scan": ("T1046 Network Service Discovery", 55, "medium", "medium", ["create_ticket", "notify"]),
+        "data_exfiltration": ("T1048 Exfiltration Over Alternative Protocol", 86, "critical", "medium",
+                              ["block_ip", "isolate_host", "create_ticket", "notify"]),
+        "intel_ioc_match": ("T1071 Application Layer Protocol", 82, "high", "low", ["block_ip", "create_ticket", "notify"]),
+        "iam_admin_grant": ("T1098.003 Account Manipulation: Additional Cloud Roles", 84, "critical", "low",
+                            ["create_ticket", "notify"]),
+        "new_access_key": ("T1098.001 Account Manipulation: Additional Cloud Credentials", 80, "high", "low",
+                           ["disable_access_key", "create_ticket", "notify"]),
+        "public_bucket": ("T1530 Data from Cloud Storage", 83, "critical", "medium", ["create_ticket", "notify"]),
+        "cloud_logging_disabled": ("T1562.008 Impair Defenses: Disable or Modify Cloud Logs", 88, "critical", "low",
+                                   ["create_ticket", "notify"]),
+        "unusual_region": ("T1535 Unused/Unsupported Cloud Regions", 72, "high", "medium", ["create_ticket", "notify"]),
+        "console_login_no_mfa": ("T1078.004 Valid Accounts: Cloud Accounts", 62, "medium", "medium", ["create_ticket", "notify"]),
+        "mailbox_forwarding_rule": ("T1114.003 Email Collection: Email Forwarding Rule", 86, "critical", "low",
+                                    ["lock_user", "create_ticket", "notify"]),
     }
 
     def _from_table(self, alert: Alert, cites: list[str]) -> Analysis:
@@ -152,7 +185,10 @@ class MockAnalyzer:
                        else (alert.users[0] if alert.users else ""))
         recs = []
         for a in acts:
-            tgt = {"block_ip": alert.source_ip, "lock_user": target_user, "create_ticket": alert.id, "notify": "soc"}[a]
+            ext = next((ip for ip in alert.related_ips if ip and not ip.startswith(("10.", "192.168.", "172.16."))), "")
+            tgt = {"block_ip": ext or alert.source_ip, "lock_user": target_user, "create_ticket": alert.id, "notify": "soc",
+                   "isolate_host": alert.hosts[0] if alert.hosts else "",
+                   "disable_access_key": d.get("principal") or target_user}[a]
             if tgt:
                 recs.append(RecommendedAction(action=a, target=tgt, reason=f"{alert.rule} playbook"))
         facts = ", ".join(f"{k}={v}" for k, v in list(d.items())[:4])

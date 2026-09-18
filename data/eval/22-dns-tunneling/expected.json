@@ -1,0 +1,19 @@
+{
+  "name": "data smuggled in DNS labels",
+  "description": "45 lookups of 40-character base32 labels under one freshly registered domain.",
+  "alerts": [
+    {
+      "rule": "dns_tunneling",
+      "match": {
+        "host": "ws-52"
+      },
+      "label": "true_positive",
+      "risk_min": 70,
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

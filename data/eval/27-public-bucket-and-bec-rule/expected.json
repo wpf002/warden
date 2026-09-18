@@ -1,0 +1,29 @@
+{
+  "name": "export bucket opened to the internet; CFO mailbox forwards invoices outside",
+  "description": "Two unrelated cloud findings in the same hour; they must stay separate.",
+  "alerts": [
+    {
+      "rule": "public_bucket",
+      "match": {
+        "user": "analyst-kb"
+      },
+      "label": "true_positive",
+      "expect_actions": {
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    },
+    {
+      "rule": "mailbox_forwarding_rule",
+      "match": {
+        "user": "cfo.smith@corp.example"
+      },
+      "label": "true_positive",
+      "expect_actions": {
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

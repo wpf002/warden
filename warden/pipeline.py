@@ -34,7 +34,8 @@ def run(log_file: Path | None = None, kb: KnowledgeBase | None = None, analyzer=
         start = min(e.ts for e in events)
         prior = store.events(since=start - timedelta(days=settings.history_days), until=start)
     store.add_events(events)
-    alerts = intel.enrich(detect(events, only=only, prior=prior), store.engine)
+    alerts = intel.enrich(detect(events, only=only, prior=prior,
+                                 ioc_lookup=lambda v: intel.lookup(v, store.engine)), store.engine)
     subjects = correlate(alerts)
     stats = detection_stats(store)
     exclusions = store.exclusions()

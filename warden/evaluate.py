@@ -94,6 +94,15 @@ class EvalCase:
     description: str = ""
     incidents: list[ExpectedIncident] = field(default_factory=list)
     history_file: Path | None = None
+    iocs: list[dict] = field(default_factory=list)       # intel table contents for this case
+
+    def ioc_lookup(self, values) -> dict:
+        vals = set(values)
+        out: dict[str, list[dict]] = {}
+        for i in self.iocs:
+            if i["value"] in vals:
+                out.setdefault(i["value"], []).append(i)
+        return out
 
     @classmethod
     def load(cls, d: Path) -> "EvalCase":
@@ -110,6 +119,7 @@ class EvalCase:
             expected=[ExpectedAlert(**e) for e in spec.get("alerts", [])],
             incidents=[ExpectedIncident(**i) for i in spec.get("incidents", [])],
             history_file=hist,
+            iocs=spec.get("iocs", []),
         )
 
 
@@ -153,6 +163,7 @@ class Report:
     risk_violations: list[str] = field(default_factory=list)
     misses: list[str] = field(default_factory=list)
     spurious: list[str] = field(default_factory=list)
+    disagreements: list[str] = field(default_factory=list)
     incidents_expected: int = 0
     incidents_merged: int = 0
     unmerged: list[str] = field(default_factory=list)
@@ -203,6 +214,7 @@ class Report:
             "llm_calls": self.llm_calls, "cost_usd": round(self.cost_usd, 4),
             "unexpected_executes": self.unexpected_executes,
             "unmerged": self.unmerged,
+            "disagreements": self.disagreements,
             "risk_violations": self.risk_violations,
             "missed": self.misses,
             "spurious": self.spurious,
@@ -223,7 +235,7 @@ def run(cases: list[EvalCase] | None = None, kb: KnowledgeBase | None = None, an
 
     for case in cases:
         prior = load_file(case.history_file) if case.history_file else None
-        alerts = detect(load_file(case.events_file), only=only, prior=prior)
+        alerts = detect(load_file(case.events_file), only=only, prior=prior, ioc_lookup=case.ioc_lookup)
         subjects = correlate(alerts)
         owner = {m.id: s for s in subjects for m in (s.members or [s])}
         unmatched = list(alerts)
@@ -309,7 +321,10 @@ def _score_subject(rep: Report, case: EvalCase, sub: Alert, label, expect_action
             verdicts[d.action.action] = d.verdict
     for action, want in expect_actions.items():
         rep.action_total += 1
-        rep.action_agree += verdicts.get(action, "absent") == want
+        got = verdicts.get(action, "absent")
+        rep.action_agree += got == want
+        if got != want:
+            rep.disagreements.append(f"{case.name}: {key} {action} wanted {want}, got {got}")
     for action, got in verdicts.items():
         if got == "execute" and action not in expect_actions and expect_actions:
             rep.unexpected_executes.append(f"{case.name}: {key} executed unexpected {action}")
@@ -339,7 +354,7 @@ def format_report(rep: Report, cases: list[EvalCase]) -> str:
         lines.append(f"model calls {rep.llm_calls}, cost ${rep.cost_usd:.4f}")
     for label, items in (("MISSED", rep.misses), ("SPURIOUS", rep.spurious),
                          ("UNEXPECTED EXECUTE", rep.unexpected_executes), ("RISK", rep.risk_violations),
-                         ("UNMERGED", rep.unmerged)):
+                         ("UNMERGED", rep.unmerged), ("DISAGREE", rep.disagreements)):
         for it in items:
             lines.append(f"  {label:<20} {it}")
     return "\n".join(lines)

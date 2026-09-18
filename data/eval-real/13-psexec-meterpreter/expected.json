@@ -1,0 +1,48 @@
+{
+  "name": "real: Metasploit PsExec over SMB: a service is registered, services",
+  "description": "Metasploit PsExec over SMB: a service is registered, services.exe spawns cmd, which runs a hidden encoded PowerShell stager.",
+  "events": "../../real/LM_sysmon_psexec_smb_meterpreter.evtx",
+  "alerts": [
+    {
+      "rule": "persistence_mechanism",
+      "match": {},
+      "label": "true_positive"
+    },
+    {
+      "rule": "suspicious_parent_child",
+      "match": {},
+      "label": "true_positive"
+    },
+    {
+      "rule": "encoded_powershell",
+      "match": {},
+      "label": "true_positive"
+    },
+    {
+      "rule": "encoded_powershell",
+      "match": {},
+      "label": "true_positive"
+    },
+    {
+      "rule": "encoded_powershell",
+      "match": {},
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "persistence_mechanism",
+        "suspicious_parent_child",
+        "encoded_powershell"
+      ],
+      "label": "true_positive",
+      "risk_min": 90,
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

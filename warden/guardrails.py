@@ -4,8 +4,40 @@ from __future__ import annotations
 from .config import settings
 from .models import Alert, Analysis, RecommendedAction
 
-AUTOMATABLE = {"block_ip", "create_ticket", "notify", "generate_report"}
+LOW_IMPACT = {"create_ticket", "notify", "generate_report"}
 NO_OP = {"no_action"}
+
+
+def _automatable(action: str) -> tuple[bool, str]:
+    """Auto-execution needs the action on the allowlist AND a connector that can undo it."""
+    from . import connectors
+    if action in LOW_IMPACT:
+        return True, ""
+    if action not in settings.auto_actions:
+        return False, "action not on automation allowlist"
+    if not connectors.can_rollback(action):
+        return False, f"connector for {action} has no rollback, so it cannot auto-execute"
+    return True, ""
+
+
+def _host_tier(alert: Alert, host: str) -> str:
+    """Tier of the host being isolated, not of the incident: an incident is crown-jewel if
+    any step touched the DC, but isolating the phished laptop is still routine."""
+    from .ingest import enrich_asset
+    tier = enrich_asset(host)
+    if tier != "unknown":
+        return tier
+    owners = [m for m in (alert.members or [alert]) if host in m.hosts]
+    return "crown_jewel" if any(m.asset_tier == "crown_jewel" for m in owners) else "unknown"
+
+
+def _principals(alert: Alert) -> set[str]:
+    out = set(alert.users)
+    for m in [alert, *alert.members]:
+        for k in ("principal", "member", "created_by"):
+            if m.detail.get(k):
+                out.add(str(m.detail[k]))
+    return out
 
 
 class Decision:
@@ -32,14 +64,24 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0) -> list[Decision]:
         if a.action == "lock_user" and a.target not in alert.users:
             out.append(Decision(a, "deny", "model proposed a user not in the alert evidence"))
             continue
+        if a.action == "isolate_host" and a.target not in alert.hosts:
+            out.append(Decision(a, "deny", "model proposed a host not in the alert evidence"))
+            continue
+        if a.action == "disable_access_key" and a.target not in _principals(alert):
+            out.append(Decision(a, "deny", "model proposed a principal not in the alert evidence"))
+            continue
         if a.action in settings.human_approval_actions:
             out.append(Decision(a, "approve", "requires analyst approval (SEC-012 §2)"))
             continue
-        if a.action not in AUTOMATABLE:
-            out.append(Decision(a, "approve", "action not on automation allowlist"))
+        ok, why_not = _automatable(a.action)
+        if not ok:
+            out.append(Decision(a, "approve", why_not))
+            continue
+        if a.action == "isolate_host" and _host_tier(alert, a.target) == "crown_jewel":
+            out.append(Decision(a, "approve", "crown-jewel hosts are never auto-isolated (RP-004)"))
             continue
         # cheap, reversible, always-on actions run regardless of risk
-        if a.action in {"create_ticket", "notify", "generate_report"}:
+        if a.action in LOW_IMPACT:
             out.append(Decision(a, "execute", "low-impact action, always allowed"))
             continue
         if analysis.false_positive_likelihood == "high":

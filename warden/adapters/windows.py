@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Iterator
 
-from ..events import AuthEvent, Event, IdentityChangeEvent
+from ..events import AuthEvent, Event, FileEvent, IdentityChangeEvent, NetworkEvent, ProcessEvent
 from ._util import clean_ip, parse_ts
 
 NAME = "windows"
@@ -61,12 +61,20 @@ def _parse_xml(xml: str) -> tuple[str, dict, dict]:
         "computer": sysn.findtext("e:Computer", default="", namespaces=NS),
         "record_id": sysn.findtext("e:EventRecordID", default="", namespaces=NS),
     }
+    system["provider"] = (sysn.find("e:Provider", NS).get("Name") if sysn.find("e:Provider", NS) is not None else "")
+    system["channel"] = sysn.findtext("e:Channel", default="", namespaces=NS)
     data = {}
     ed = root.find("e:EventData", NS)
     if ed is not None:
         for d in ed.findall("e:Data", NS):
             if d.get("Name"):
                 data[d.get("Name")] = (d.text or "").strip()
+    ud = root.find("e:UserData", NS)
+    if ud is not None:   # 1102/104 and friends put their fields under UserData/<SomeName>/
+        for el in ud.iter():
+            tag = el.tag.split("}")[-1]
+            if len(el) == 0 and el.text and el.text.strip():
+                data.setdefault(tag, el.text.strip())
     return eid, system, data
 
 
@@ -75,7 +83,58 @@ def _user(data: dict, key: str = "TargetUserName") -> str:
     return "" if u in ("-", "") else u
 
 
+def _base(path: str) -> str:
+    return path.replace("/", "\\").rsplit("\\", 1)[-1].lower() if path else ""
+
+
+def _int(v) -> int:
+    try:
+        return int(v, 16) if str(v).lower().startswith("0x") else int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _sysmon(eid: str, sysd: dict, data: dict) -> Event | None:
+    ts = parse_ts(data.get("UtcTime") or sysd["ts"])
+    host = sysd["computer"].split(".")[0].lower() if sysd["computer"] else ""
+    user = data.get("User", "")
+    common = dict(ts=ts, source="sysmon", host=host, user=user.split("\\")[-1] if user else "",
+                  raw={"event_id": eid, "provider": "sysmon", "computer": sysd["computer"], **data})
+    img = data.get("Image", "")
+    if eid == "1":
+        return ProcessEvent(**common, action="start", process_name=_base(img), image=img,
+                            command_line=data.get("CommandLine", ""), parent_name=_base(data.get("ParentImage", "")),
+                            parent_command_line=data.get("ParentCommandLine", ""), pid=_int(data.get("ProcessId")),
+                            ppid=_int(data.get("ParentProcessId")),
+                            sha256=next((h.split("=")[1] for h in data.get("Hashes", "").split(",") if h.startswith("SHA256=")), ""))
+    if eid == "3":
+        initiated = data.get("Initiated", "true").lower() == "true"
+        src, dst = ("Source", "Destination") if initiated else ("Destination", "Source")
+        return NetworkEvent(**{**common, "source_ip": clean_ip(data.get(f"{src}Ip"))}, dest_ip=clean_ip(data.get(f"{dst}Ip")),
+                            dest_port=_int(data.get(f"{dst}Port")), source_port=_int(data.get(f"{src}Port")),
+                            protocol=data.get("Protocol", ""), domain=data.get(f"{dst}Hostname", ""),
+                            process_name=_base(img), action="allowed")
+    if eid == "10":
+        return ProcessEvent(**{**common, "user": (data.get("SourceUser") or "").split("\\")[-1]}, action="access",
+                            process_name=_base(data.get("SourceImage", "")), image=data.get("SourceImage", ""),
+                            target=data.get("TargetImage", ""), granted_access=data.get("GrantedAccess", ""),
+                            pid=_int(data.get("SourceProcessId")), command_line=data.get("CallTrace", "")[:500])
+    if eid in ("12", "13", "14"):
+        return ProcessEvent(**common, action="registry_set", process_name=_base(img), image=img,
+                            target=data.get("TargetObject", ""), command_line=data.get("Details", ""),
+                            pid=_int(data.get("ProcessId")))
+    if eid in ("11", "23", "26"):
+        return FileEvent(**common, path=data.get("TargetFilename", ""), process_name=_base(img),
+                         action="create" if eid == "11" else "delete")
+    if eid == "22":
+        return NetworkEvent(**common, domain=data.get("QueryName", ""), protocol="dns", process_name=_base(img),
+                            dns_type=data.get("QueryType", ""), action="allowed")
+    return None
+
+
 def to_event(eid: str, sysd: dict, data: dict) -> Event | None:
+    if "Sysmon" in sysd.get("provider", ""):
+        return _sysmon(eid, sysd, data)
     ts = parse_ts(sysd["ts"])
     host = sysd["computer"].split(".")[0].lower() if sysd["computer"] else ""
     raw = {"event_id": eid, "record_id": sysd["record_id"], "computer": sysd["computer"], **data}
@@ -118,10 +177,29 @@ def to_event(eid: str, sysd: dict, data: dict) -> Event | None:
                "4726": "account_deleted", "4724": "password_reset"}
     if eid in changes:
         return IdentityChangeEvent(**common, user=actor, target_user=_user(data), change_type=changes[eid])
-    if eid == "1102":
-        from ..events import CloudAuditEvent  # generic audit record until ProcessEvent-level rules exist
-        return CloudAuditEvent(**common, user=_user(data, "SubjectUserName"), provider="windows",
-                               api_call="audit_log_cleared", outcome="success")
+    if eid in ("1102", "104"):
+        return ProcessEvent(**{**common, "user": data.get("SubjectUserName", "")}, action="log_cleared",
+                            process_name="eventlog", target=data.get("Channel") or ("Security" if eid == "1102" else ""))
+    if eid == "4688":
+        return ProcessEvent(**{**common, "user": _user(data, "SubjectUserName")}, action="start",
+                            process_name=_base(data.get("NewProcessName", "")), image=data.get("NewProcessName", ""),
+                            command_line=data.get("CommandLine", ""), parent_name=_base(data.get("ParentProcessName", "")),
+                            pid=_int(data.get("NewProcessId")), ppid=_int(data.get("ProcessId")))
+    if eid == "4698":
+        content = data.get("TaskContent", "")
+        cmd = " ".join(re.findall(r"<(?:Command|Arguments)>(.*?)</(?:Command|Arguments)>", content.replace("&lt;", "<").replace("&gt;", ">")))
+        return ProcessEvent(**{**common, "user": _user(data, "SubjectUserName")}, action="task_created",
+                            process_name="schtasks", target=data.get("TaskName", ""), command_line=cmd)
+    if eid == "7045":
+        return ProcessEvent(**{**common, "user": data.get("AccountName", "")}, action="service_installed",
+                            process_name="services.exe", target=data.get("ImagePath", ""),
+                            command_line=f"{data.get('ServiceName', '')}: {data.get('ImagePath', '')}")
+    if eid == "4104":
+        return ProcessEvent(**common, action="script_block", process_name="powershell.exe",
+                            command_line=data.get("ScriptBlockText", "")[:4000])
+    if eid in ("5001", "5007", "5010", "5012") and "Defender" in sysd.get("provider", ""):
+        return ProcessEvent(**common, action="av_tamper", process_name="msmpeng.exe",
+                            target=data.get("New Value", "") or data.get("Feature Name", "") or f"defender event {eid}")
     return None
 
 

@@ -68,7 +68,8 @@ class Alert(BaseModel):
 
 
 class RecommendedAction(BaseModel):
-    action: Literal["block_ip", "lock_user", "create_ticket", "notify", "generate_report", "no_action"]
+    action: Literal["block_ip", "lock_user", "isolate_host", "disable_access_key", "create_ticket", "notify",
+                    "generate_report", "no_action"]
     target: str = ""
     reason: str = ""
 
@@ -87,8 +88,11 @@ class Analysis(BaseModel):
 class ActionResult(BaseModel):
     action: str
     target: str
-    status: Literal["executed", "pending_approval", "denied", "failed"]
+    status: Literal["executed", "pending_approval", "denied", "failed", "rolled_back"]
     detail: str = ""
+    connector: str = ""
+    dry_run: bool = False
+    receipt: dict = Field(default_factory=dict)
     ts: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

@@ -97,6 +97,8 @@ def case_view(alert_id: str, user: User = Depends(require("viewer"))):
         if r.status == "pending_approval" and c.status != "closed":
             ctl = (f"<form method=post action='/case/{a.id}/action/{i}/approve'><button>Approve</button></form>"
                    f"<form method=post action='/case/{a.id}/action/{i}/deny'><button class=secondary>Deny</button></form>")
+        elif r.status == "executed" and r.receipt:
+            ctl = f"<form method=post action='/case/{a.id}/action/{i}/rollback'><button class=secondary>Roll back</button></form>"
         acts += f"<tr><td class={r.status}>{r.status}</td><td>{r.action}</td><td>{html.escape(r.target)}</td><td>{html.escape(r.detail)}</td><td>{ctl}</td></tr>"
     docs = "".join(f"<div class=doc><b>{html.escape(d['id'])}</b> <span style='color:#5c6f91'>dist {d['distance']}</span>"
                    f"<div class=mono>{html.escape(d['text'][:600])}</div></div>" for d in c.retrieved_docs)
@@ -156,6 +158,16 @@ def reindex(user: User = Depends(require("admin"))):
 def approve(alert_id: str, idx: int, user: User = Depends(require("analyst"))):
     c = store.get(alert_id) or _404()
     feedback.approve_action(c, idx, store, actor=user.name)
+    return RedirectResponse(f"/case/{alert_id}", status_code=303)
+
+
+@app.post("/case/{alert_id}/action/{idx}/rollback")
+def rollback(alert_id: str, idx: int, user: User = Depends(require("analyst"))):
+    c = store.get(alert_id) or _404()
+    try:
+        feedback.rollback_action(c, idx, store, actor=user.name)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
     return RedirectResponse(f"/case/{alert_id}", status_code=303)
 
 

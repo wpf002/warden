@@ -18,7 +18,8 @@ def sniff(head: str, path: Path) -> bool:
 def to_event(rec: dict) -> Event | None:
     if "ts" not in rec:
         return None
-    rec = {**rec, "ts": parse_ts(rec["ts"]), "raw": rec}
+    # keep a source-provided raw record (CloudTrail requestParameters, M365 Parameters); else the row itself
+    rec = {**rec, "ts": parse_ts(rec["ts"]), "raw": rec["raw"] if isinstance(rec.get("raw"), dict) else rec}
     try:
         return parse_event(rec)
     except Exception:  # noqa: BLE001 - one bad row must not kill the file

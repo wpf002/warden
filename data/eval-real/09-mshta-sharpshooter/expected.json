@@ -1,0 +1,17 @@
+{
+  "name": "real: mshta running a SharpShooter HTA that stages Meterpreter (Sysmon 1 and 3)",
+  "description": "mshta running a SharpShooter HTA that stages Meterpreter (Sysmon 1 and 3).",
+  "events": "../../real/sysmon_mshta_sharpshooter_stageless_meterpreter.evtx",
+  "alerts": [
+    {
+      "rule": "lolbin_abuse",
+      "match": {},
+      "label": "true_positive",
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

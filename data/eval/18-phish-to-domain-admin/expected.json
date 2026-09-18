@@ -1,0 +1,67 @@
+{
+  "name": "phish -> macro PowerShell -> beacon -> SMB fan-out -> new domain admin",
+  "description": "Cross-domain chain on ws-17 and jlee, the one the Phase 4 exit criteria ask for.",
+  "alerts": [
+    {
+      "rule": "suspicious_parent_child",
+      "match": {
+        "host": "ws-17"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "encoded_powershell",
+      "match": {
+        "host": "ws-17"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "beaconing",
+      "match": {
+        "source_ip": "185.220.101.66"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "lateral_movement_fanout",
+      "match": {
+        "host": "ws-17"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "account_create_then_privilege",
+      "match": {
+        "user": "svc-backup2"
+      },
+      "label": "true_positive"
+    },
+    {
+      "rule": "privileged_group_add",
+      "match": {
+        "user": "svc-backup2"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "suspicious_parent_child",
+        "beaconing",
+        "lateral_movement_fanout",
+        "privileged_group_add"
+      ],
+      "label": "true_positive",
+      "risk_min": 90,
+      "expect_actions": {
+        "isolate_host": "execute",
+        "block_ip": "execute",
+        "lock_user": "approve",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

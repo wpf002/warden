@@ -60,36 +60,57 @@ class AuthEvent(Event):
 
 
 class ProcessEvent(Event):
+    """Endpoint activity. `action` says what happened:
+        start            a process launched (Sysmon 1, Security 4688, EDR process events)
+        access           one process opened another (Sysmon 10); `target` is the target image
+        registry_set     a registry value written (Sysmon 13); `target` is the key
+        task_created     scheduled task registered (4698); `target` is the task name
+        service_installed  service created (7045); `target` is the image path
+        log_cleared      an event log was cleared (1102, 104); `target` is the channel
+        script_block     PowerShell script block logged (4104); `command_line` is the script
+        av_tamper        security tooling disabled or reconfigured (Defender 5001/5007)
+    """
     kind: Literal["process"] = "process"
-    process_name: str = ""
+    action: str = "start"
+    process_name: str = ""           # basename, lowercase: "powershell.exe"
+    image: str = ""                  # full path
     command_line: str = ""
     parent_name: str = ""
+    parent_command_line: str = ""
+    target: str = ""
+    granted_access: str = ""
     pid: int = 0
     ppid: int = 0
     sha256: str = ""
 
     def _discriminator(self) -> str:
-        return f"proc:{self.process_name}:{self.pid}"
+        return f"proc:{self.action}:{self.process_name}:{self.pid}:{self.target[:80]}:{self.command_line[:80]}"
 
 
 class NetworkEvent(Event):
+    """A connection or a DNS query. `source_ip` is the initiator."""
     kind: Literal["network"] = "network"
     dest_ip: str = ""
     dest_port: int = 0
-    protocol: str = ""
-    domain: str = ""
+    source_port: int = 0
+    protocol: str = ""               # tcp | udp | dns | http ...
+    domain: str = ""                 # DNS query name or HTTP host
+    dns_type: str = ""               # A | AAAA | TXT | ...
     bytes_out: int = 0
     bytes_in: int = 0
-    action: str = ""                 # allowed | blocked
+    action: str = ""                 # allowed | blocked | "" (unknown)
+    process_name: str = ""
 
     def _discriminator(self) -> str:
-        return f"net:{self.dest_ip}:{self.dest_port}:{self.domain}"
+        return f"net:{self.dest_ip}:{self.dest_port}:{self.source_port}:{self.domain}:{self.dns_type}"
 
 
 class FileEvent(Event):
     kind: Literal["file"] = "file"
     path: str = ""
+    old_path: str = ""               # for renames
     action: Literal["create", "modify", "delete", "rename", "read"] = "modify"
+    process_name: str = ""
     sha256: str = ""
 
     def _discriminator(self) -> str:

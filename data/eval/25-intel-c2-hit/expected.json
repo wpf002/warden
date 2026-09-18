@@ -1,0 +1,38 @@
+{
+  "name": "connection to a Feodo-listed QakBot C2",
+  "description": "One HTTPS session to an IP on the abuse.ch Feodo list.",
+  "iocs": [
+    {
+      "type": "ip",
+      "value": "50.16.16.211",
+      "source": "feodo",
+      "confidence": 90,
+      "tags": {
+        "malware": "QakBot",
+        "status": "online"
+      }
+    },
+    {
+      "type": "ip",
+      "value": "142.250.80.46",
+      "source": "tor_exit",
+      "confidence": 30,
+      "tags": {}
+    }
+  ],
+  "alerts": [
+    {
+      "rule": "intel_ioc_match",
+      "match": {
+        "source_ip": "50.16.16.211"
+      },
+      "label": "true_positive",
+      "expect_actions": {
+        "block_ip": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "the Tor-listed IP in the same traffic is below the confidence floor and must not fire"
+    }
+  ]
+}

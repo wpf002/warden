@@ -1,0 +1,17 @@
+{
+  "name": "real: regsvr32 loading a remote scriptlet through scrobj",
+  "description": "regsvr32 loading a remote scriptlet through scrobj.dll (Squiblydoo, Sysmon 1 and 3).",
+  "events": "../../real/exec_sysmon_lobin_regsvr32_sct.evtx",
+  "alerts": [
+    {
+      "rule": "lolbin_abuse",
+      "match": {},
+      "label": "true_positive",
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}
