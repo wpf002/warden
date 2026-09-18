@@ -139,6 +139,27 @@ baselines = Table(
 )
 
 
+proposals = Table(
+    "proposals", metadata,
+    Column("id", String(32), primary_key=True),
+    Column("created", DateTime(timezone=True), index=True),
+    Column("updated", DateTime(timezone=True)),
+    Column("trigger", String(32)),            # anomaly_tp | analyst_note | intel_gap | hunt
+    Column("source", String(256)),
+    Column("status", String(32), index=True),  # generated | rejected_static | failed_eval | ready_for_review | rejected | approved | pr_opened
+    Column("rule_id", String(64)),
+    Column("rationale", Text),
+    Column("files", JSON),
+    Column("checks", JSON),
+    Column("eval", JSON),
+    Column("review", JSON),
+    Column("model", String(64)),
+    Column("prompt_version", String(64)),
+    Column("cost_usd", Float),
+    Column("pr_url", String(512)),
+)
+
+
 def _url() -> str:
     if settings.database_url:
         return settings.database_url

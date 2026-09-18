@@ -110,7 +110,7 @@ def bundle():
 
 def test_parse_skips_deprecated_and_revoked(bundle):
     ids = {t["id"] for t in attack.parse(bundle)}
-    assert ids == {"T1110", "T1110.001"}
+    assert ids == {"T1110", "T1110.001", "T1136.001"}
 
 
 def test_parse_resolves_relationships(bundle):
@@ -132,9 +132,9 @@ def test_render_keeps_detection_guidance_addressable(bundle):
 def test_ingest_indexes_and_writes_manifest(tmp_path, bundle):
     k = KnowledgeBase(persist=False)
     n_tech, n_chunks = attack.ingest(file=FIXTURES / "mini-attack-bundle.json", out=tmp_path, kb=k)
-    assert n_tech == 2 and n_chunks > 0
+    assert n_tech == 3 and n_chunks > 0
     m = json.loads((tmp_path / "_manifest.json").read_text())
-    assert m["techniques"] == 2 and m["attack_version"] == "17.0" and m["fetched"]
+    assert m["techniques"] == 3 and m["attack_version"] == "17.0" and m["fetched"]
     assert (tmp_path / "T1110.001.md").exists()
 
     hits = k.retrieve_by_technique("brute force password guessing", ["T1110.001"], k=3, kind="attack")
@@ -156,3 +156,9 @@ def test_attack_corpus_does_not_crowd_out_playbooks(tmp_path):
     assert "attack" in kinds, "the mapped technique page should be retrieved"
     assert sum(x == "attack" for x in kinds) <= 2, "ATT&CK must not dominate the budget"
     assert any(d["doc"] == alert.playbook for d in docs[:3])
+
+
+def test_parse_reads_v18_detection_strategies(bundle):
+    t = next(t for t in attack.parse(bundle) if t["id"] == "T1136.001")
+    assert "Strategy: Local Account Creation" in t["detection"]
+    assert "(Windows) Account creation event (4720)" in t["detection"] and "WinEventLog:Security" in t["detection"]

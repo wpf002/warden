@@ -101,6 +101,28 @@ moves, a rollout, a recurring maintenance night, two planted recon runs): FPs 13
 one, 11 in week two, both recon runs caught. It is a simulation; real FP rates need real
 logs and at least 7 days of history per entity.
 
+## Detection proposals
+
+When an analyst confirms a true positive that no rule named (an anomaly, or a note like
+"this should be its own rule"), or when an ATT&CK technique with detection guidance has no
+rule (`warden propose --gaps`), Claude drafts a new detection: the rule module, a playbook,
+a fixture with the evidence and a near-miss, and a test.
+
+```bash
+python -m warden.cli propose --events suspicious.evtx --note "should be its own rule"
+python -m warden.cli propose --case ALT-1234ABCD
+python -m warden.cli propose --technique T1136.001
+python -m warden.cli propose --pending          # requests queued by analyst verdicts
+python -m warden.cli proposals                  # review queue; also /proposals in the dashboard
+```
+
+Evidence is anonymized before it reaches the model (stable pseudonyms for users, hosts,
+IPs). The draft is checked statically (imports allowlist, no I/O, no dynamic code, correct
+class shape, new id), then evaluated in a copy of the repo in a subprocess without secrets:
+its own test, both eval suites, and a replay of the new rule over every stored and fixture
+event to show what else it would fire on. An admin approves it into a pull request on a
+branch. Nothing is ever loaded at runtime from a proposal.
+
 ## Response connectors
 
 `warden/connectors/`, mapped per action with `WARDEN_CONNECTORS`

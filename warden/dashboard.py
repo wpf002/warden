@@ -75,7 +75,7 @@ def index(user: User = Depends(require("viewer"))):
       <span class=kpi><b>{len(cases)}</b>alerts</span><span class=kpi><b>{n_open}</b>open</span>
       <span class=kpi><b>{n_pending}</b>awaiting approval</span><span class=kpi><b>{n_exec}</b>actions executed</span>
       <span class=kpi><b>{n_tp}/{n_fp}</b>TP / FP</span>
-      <a href=/detections>detections</a> · <a href=/exclusions>exclusions</a> · <a href=/audit>audit</a>
+      <a href=/detections>detections</a> · <a href=/exclusions>exclusions</a> · <a href=/proposals>proposals</a> · <a href=/audit>audit</a>
       <form method=post action=/run style='float:right'><button>Run pipeline</button></form>
       <form method=post action=/reindex style='float:right'><button class=secondary>Reindex KB</button></form>
     </div>
@@ -258,6 +258,51 @@ def exclusions_view(user: User = Depends(require("viewer"))):
 def expire_exclusion(ex_id: int, user: User = Depends(require("analyst"))):
     store.expire_exclusion(ex_id, user.name)
     return RedirectResponse("/exclusions", status_code=303)
+
+
+@app.get("/proposals", response_class=HTMLResponse)
+def proposals_view(user: User = Depends(require("viewer"))):
+    from . import proposals
+    rows = "".join(
+        f"<tr><td><a href='/proposals/{p['id']}'>{p['id']}</a></td><td>{p['status']}</td><td>{html.escape(p['rule_id'] or '')}</td>"
+        f"<td>{p['trigger']}</td><td>{html.escape(p['source'] or '')}</td><td>{p['created']:%Y-%m-%d %H:%M}</td>"
+        f"<td>{('<a href=' + html.escape(p['pr_url']) + '>PR</a>') if p['pr_url'] else ''}</td></tr>"
+        for p in proposals.list_proposals(store.engine))
+    return _page("Proposals", "<p><a href=/>&larr; alerts</a></p><h1>Detection proposals</h1><table><tr><th>Id</th>"
+                 f"<th>Status</th><th>Rule</th><th>Trigger</th><th>Source</th><th>Created</th><th></th></tr>{rows}</table>")
+
+
+@app.get("/proposals/{pid}", response_class=HTMLResponse)
+def proposal_view(pid: str, user: User = Depends(require("viewer"))):
+    from . import proposals
+    p = proposals.get(pid, store.engine) or _404()
+    ev = p.get("eval") or {}
+    files = "".join(f"<h2>{html.escape(path)}</h2><div class='card mono'>{html.escape(body)}</div>"
+                    for path, body in (p.get("files") or {}).items())
+    hits = "".join(f"<li>{html.escape(h.get('file', ''))}: {html.escape(h.get('title') or h.get('error', ''))}</li>"
+                   for h in ev.get("historical_hits", []))
+    ctl = ""
+    if p["status"] == "ready_for_review" and user.can("admin"):
+        ctl = (f"<form method=post action='/proposals/{pid}/review'><input type=text name=note placeholder='review note'> "
+               f"<button name=decision value=approve>Approve and open PR</button>"
+               f"<button name=decision value=reject class=secondary>Reject</button></form>")
+    body = (f"<p><a href=/proposals>&larr; proposals</a></p><h1>{pid} <span style='color:#5c6f91'>{html.escape(p['rule_id'] or '')}</span></h1>"
+            f"<div class=card>status <b>{p['status']}</b> · trigger {p['trigger']} · source {html.escape(p['source'] or '')} · "
+            f"model {html.escape(p['model'] or '')} · prompt {html.escape(p['prompt_version'] or '')}"
+            f"<p>{html.escape(p['rationale'] or '')}</p>{ctl}</div>"
+            f"<h2>Checks and sandbox evaluation</h2><div class='card mono'>{html.escape(json.dumps({k: v for k, v in ev.items() if k != 'historical_hits'} | {'static': (p.get('checks') or {}).get('static')}, indent=2, default=str))}</div>"
+            f"<h2>Fires on historical data</h2><div class=card><ul>{hits or '<li>nothing</li>'}</ul></div>{files}")
+    return _page(pid, body)
+
+
+@app.post("/proposals/{pid}/review")
+def proposal_review(pid: str, decision: str = Form(...), note: str = Form(""), user: User = Depends(require("admin"))):
+    from . import proposals
+    try:
+        proposals.review(pid, decision, user.name, note, store=store)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(422, str(e)) from None
+    return RedirectResponse(f"/proposals/{pid}", status_code=303)
 
 
 @app.get("/audit", response_class=HTMLResponse)

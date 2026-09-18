@@ -17,6 +17,7 @@ def _env(name: str, default: str) -> str:
 class Settings:
     llm_provider: str = field(default_factory=lambda: _env("WARDEN_LLM", "anthropic"))
     model: str = field(default_factory=lambda: _env("WARDEN_MODEL", "claude-opus-5"))
+    proposal_model: str = field(default_factory=lambda: _env("WARDEN_PROPOSAL_MODEL", "claude-opus-5"))
     effort: str = field(default_factory=lambda: _env("WARDEN_EFFORT", "medium"))
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY", ""))
     # needed only when the key is not scoped to a workspace

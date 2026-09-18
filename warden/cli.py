@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from .config import settings
@@ -177,6 +178,62 @@ def cmd_baseline(a):
         print(f"{t:5} {len(days):5} profiles, median {sorted(days)[len(days) // 2]} days of history")
 
 
+def cmd_propose(a):
+    """Generate detection proposals with Claude. Needs a working ANTHROPIC_API_KEY."""
+    from . import proposals
+    from .store import CaseStore
+    store = CaseStore()
+    if a.gaps:
+        for g in proposals.gaps(a.limit):
+            print(f"{g['technique']:12} {g['title'][:60]:62} {g['tactics'][:30]:32} groups {g['groups']}")
+        return
+    todo = []
+    if a.events:
+        from .ingest import load_file
+        todo.append(("hunt", load_file(Path(a.events)), a.note or "analyst-confirmed malicious activity; no rule fired",
+                     [], a.events))
+    if a.case:
+        c = store.get(a.case)
+        if not c:
+            raise SystemExit(f"no case {a.case}")
+        evs = [e for e in store.events(since=c.alert.first_seen, until=c.alert.last_seen)
+               if (e.user and e.user in c.alert.users) or (e.host and e.host in c.alert.hosts)
+               or (e.source_ip and e.source_ip in c.alert.all_ips())]
+        todo.append(("anomaly_tp" if c.alert.rule.startswith("anomaly.") else "analyst_note", evs,
+                     f"analyst confirmed true positive on {c.alert.id}: {c.alert.title}. {c.analyst_note}", c.alert.mitre, c.alert.id))
+    if a.pending:
+        for r in proposals.list_proposals(store.engine):
+            if r["status"] == "requested":
+                c = store.get(r["source"])
+                if c:
+                    evs = [e for e in store.events(since=c.alert.first_seen, until=c.alert.last_seen)
+                           if (e.user and e.user in c.alert.users) or (e.host and e.host in c.alert.hosts)]
+                    todo.append((r["trigger"], evs, f"{c.alert.title}. {c.analyst_note}", c.alert.mitre, c.alert.id))
+    for t in a.technique or []:
+        todo.append(("intel_gap", [], f"ATT&CK technique {t} has detection guidance and no Warden rule.", [t], t))
+    for trigger, evs, why, techs, source in todo:
+        pid = proposals.create(trigger, evs, context_query=why, techniques=techs, store=store, source=str(source))
+        p = proposals.get(pid, store.engine)
+        print(f"{pid}  {p['status']:18} {p['rule_id']}  ${p['cost_usd'] or 0:.3f}")
+
+
+def cmd_proposals(a):
+    from . import proposals
+    from .store import CaseStore
+    store = CaseStore()
+    if a.id and a.decision:
+        print(proposals.review(a.id, a.decision, a.actor, a.note or "", store=store, open_pr=not a.no_pr))
+        return
+    if a.id:
+        p = proposals.get(a.id, store.engine)
+        print(json.dumps({k: v for k, v in p.items() if k != "files"}, indent=2, default=str))
+        for path, content in (p["files"] or {}).items():
+            print(f"\n===== {path}\n{content}")
+        return
+    for p in proposals.list_proposals(store.engine):
+        print(f"{p['id']}  {p['status']:18} {p['rule_id'] or '':32} {p['trigger']:13} {p['pr_url'] or ''}")
+
+
 def cmd_serve(a):
     import uvicorn
     uvicorn.run("warden.dashboard:app", host=a.host, port=a.port, reload=False)
@@ -238,6 +295,24 @@ def main(argv=None):
     bl.add_argument("--type", choices=["user", "host"], default="user")
     bl.add_argument("--entity", default=None)
     bl.set_defaults(fn=cmd_baseline)
+
+    pr = sub.add_parser("propose", help="have Claude propose a detection from evidence, a case, or an ATT&CK gap")
+    pr.add_argument("--events", default=None, help="log file of confirmed-malicious activity no rule caught")
+    pr.add_argument("--note", default=None)
+    pr.add_argument("--case", default=None, help="a true-positive case id")
+    pr.add_argument("--technique", action="append", help="ATT&CK id with no rule (repeatable)")
+    pr.add_argument("--pending", action="store_true", help="process proposal requests queued by analyst verdicts")
+    pr.add_argument("--gaps", action="store_true", help="list uncovered techniques that have detection guidance")
+    pr.add_argument("--limit", type=int, default=20)
+    pr.set_defaults(fn=cmd_propose)
+
+    pq = sub.add_parser("proposals", help="list, show, approve, or reject detection proposals")
+    pq.add_argument("id", nargs="?")
+    pq.add_argument("decision", nargs="?", choices=["approve", "reject"])
+    pq.add_argument("--actor", default="cli")
+    pq.add_argument("--note", default=None)
+    pq.add_argument("--no-pr", action="store_true", help="approve without opening a pull request")
+    pq.set_defaults(fn=cmd_proposals)
 
     hp = sub.add_parser("hash-password", help="hash a password for WARDEN_USERS")
     hp.add_argument("--password", default=None, help="omit to be prompted")

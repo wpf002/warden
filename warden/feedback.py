@@ -84,6 +84,12 @@ def record_verdict(case: Case, verdict: str, note: str, store: CaseStore, kb: Kn
     store.save(case)
     store.audit(actor, "verdict", case.alert.id, verdict=verdict, note=note, rule=case.alert.rule,
                 reason=case.analyst_reason, suppress=suppress)
+    from . import proposals
+    if proposals.should_propose(case):
+        trig = "anomaly_tp" if all(r.startswith("anomaly.") for r in case.alert.rules()) else "analyst_note"
+        proposals._save(f"REQ-{case.alert.id[-8:]}", store.engine, trigger=trig, source=case.alert.id, status="requested")
+        case.guardrail_log.append(f"PROPOSAL requested ({trig}); `warden propose --pending` drafts it")
+        store.save(case)
 
     # Write a learned case. This is the "update knowledge base" arrow in the diagram.
     a = case.alert

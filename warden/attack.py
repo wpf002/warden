@@ -78,6 +78,9 @@ def parse(bundle: dict) -> list[dict]:
         }
 
     related: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    # ATT&CK v18+: detection guidance moved from x_mitre_detection on the technique to
+    # detection-strategy objects (linked by "detects") that reference analytics.
+    analytics = {o["id"]: o for o in objects if o.get("type") == "x-mitre-analytic"}
     for o in objects:
         if o.get("type") != "relationship" or o.get("revoked"):
             continue
@@ -88,7 +91,17 @@ def parse(bundle: dict) -> list[dict]:
         if not src_obj or src_obj.get("revoked") or src_obj.get("x_mitre_deprecated"):
             continue
         name = src_obj.get("name", "")
-        if rel == "mitigates" and src_obj.get("type") == "course-of-action":
+        if rel == "detects" and src_obj.get("type") == "x-mitre-detection-strategy":
+            lines = [f"Strategy: {src_obj.get('name', '')}"]
+            for ref in src_obj.get("x_mitre_analytic_refs", []):
+                an = analytics.get(ref)
+                if not an or an.get("revoked") or an.get("x_mitre_deprecated"):
+                    continue
+                logs = ", ".join(sorted({f"{ls.get('name')}" for ls in an.get("x_mitre_log_source_references", [])}))
+                plat = ", ".join(an.get("x_mitre_platforms", []))
+                lines.append(f"- ({plat}) {(an.get('description') or '').strip()}" + (f" Log sources: {logs}." if logs else ""))
+            related[tgt]["strategies"].append("\n".join(lines))
+        elif rel == "mitigates" and src_obj.get("type") == "course-of-action":
             desc = (o.get("description") or "").strip().split("\n")[0]
             related[tgt]["mitigations"].append(f"{name}: {desc}" if desc else name)
         elif rel == "uses" and src_obj.get("type") in USES_TYPES:
@@ -97,7 +110,11 @@ def parse(bundle: dict) -> list[dict]:
     out = []
     for stix_id, t in techniques.items():
         for key, vals in related.get(stix_id, {}).items():
-            t[key] = sorted(set(vals))
+            if key == "strategies":
+                strategy_text = "\n\n".join(vals)
+                t["detection"] = (t["detection"] + "\n\n" + strategy_text).strip() if t["detection"] else strategy_text
+            else:
+                t[key] = sorted(set(vals))
         out.append(t)
     return sorted(out, key=lambda t: t["id"])
 
