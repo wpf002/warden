@@ -1,5 +1,6 @@
 """Phase 6 machinery with a stand-in proposer. The stand-in returns a draft written by hand
 for these tests; real proposals come from Claude (AnthropicProposer)."""
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -61,12 +62,12 @@ def draft(code=GOOD, test=TEST, rid="machine_account_lookalike"):
     return ProposalDraft(
         detection_id=rid, mitre=["T1136.002"], rationale="Lone '$' account creation, as in the real 4720 sample.",
         detection_code=code, playbook_markdown="# Playbook: machine account lookalike\n\nDisable it.",
-        fixture=FixtureSpec(events=[
+        fixture=FixtureSpec(events_jsonl="\n".join(json.dumps(e) for e in [
             {"kind": "identity", "ts": "2026-09-01T09:00:00+00:00", "change_type": "account_created",
              "user": "host-01$", "target_user": "$", "host": "host-01"},
             {"kind": "identity", "ts": "2026-09-01T09:05:00+00:00", "change_type": "account_created",
-             "user": "admin", "target_user": "WEB-SERVER-07$", "host": "dc"}],
-            expected_alerts=[{"rule": rid, "match": {}, "label": "true_positive"}], description="lookalike vs real"),
+             "user": "admin", "target_user": "WEB-SERVER-07$", "host": "dc"}]),
+            expected_alerts=[{"rule": rid, "label": "true_positive"}], description="lookalike vs real"),
         test_code=test)
 
 
@@ -162,3 +163,12 @@ def test_tp_on_anomaly_queues_a_request(tmp_path):
     feedback.record_verdict(case, "true_positive", "recon", store, KnowledgeBase(persist=False), actor="ana")
     reqs = [p for p in proposals.list_proposals(store.engine) if p["status"] == "requested"]
     assert reqs and reqs[0]["source"] == "ALT-ANOM0001" and reqs[0]["trigger"] == "anomaly_tp"
+
+
+def test_literal_getattr_is_allowed_but_computed_is_not():
+    ok = GOOD.replace("name = e.target_user or \"\"", "name = getattr(e, \"target_user\", \"\") or \"\"")
+    assert check_detection(ok, "machine_account_lookalike") == []
+    bad = GOOD.replace("name = e.target_user or \"\"", "name = getattr(e, \"__class__\")")
+    assert check_detection(bad, "machine_account_lookalike")
+    computed = GOOD.replace("name = e.target_user or \"\"", "name = getattr(e, e.user)")
+    assert check_detection(computed, "machine_account_lookalike")

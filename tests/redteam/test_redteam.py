@@ -134,3 +134,28 @@ def test_a_model_cannot_flood_tickets_or_pages():
     acts = [("create_ticket", "ALT-RT000001")] * 3 + [("notify", "soc")] * 4
     got = [v for *_, v in verdicts(alert(), evil(*acts))]
     assert got.count("execute") == 2
+
+
+def test_internal_addresses_are_never_perimeter_blocked():
+    a = alert(source_ip="172.16.66.1")
+    assert verdicts(a, evil(("block_ip", "172.16.66.1")))[0][2] == "deny"
+
+
+def test_identity_alerts_never_auto_isolate_the_server_that_logged_them():
+    a = alert(rule="password_spray", hosts=["dc-west-7"])
+    assert verdicts(a, evil(("isolate_host", "dc-west-7")))[0][2] == "approve"
+
+
+def test_free_text_ticket_and_channel_targets_map_to_the_case_and_default_channel():
+    got = verdicts(alert(), evil(("create_ticket", "Security incident for the VPN"), ("notify", "SOC team")))
+    assert got == [("create_ticket", "ALT-RT000001", "execute"), ("notify", "soc", "execute")]
+
+
+def test_access_keys_only_on_cloud_evidence():
+    a = alert(rule="log_clearing", users=["user01"])
+    assert verdicts(a, evil(("disable_access_key", "user01")))[0][2] == "deny"
+
+
+def test_impossible_travel_legs_are_never_auto_blocked():
+    a = alert(rule="impossible_travel", source_ip="45.83.140.6", related_ips=["72.14.201.9"])
+    assert [v for *_, v in verdicts(a, evil(("block_ip", "45.83.140.6"), ("block_ip", "72.14.201.9")))] == ["approve", "approve"]

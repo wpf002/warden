@@ -157,6 +157,7 @@ proposals = Table(
     Column("prompt_version", String(64)),
     Column("cost_usd", Float),
     Column("pr_url", String(512)),
+    Column("evidence", JSON),                  # anonymized events the proposal was built from
 )
 
 
@@ -189,7 +190,28 @@ def make_engine(url: str) -> Engine:
             cur.execute("PRAGMA foreign_keys=ON")
             cur.close()
     metadata.create_all(eng)
+    migrate(eng)
     return eng
+
+
+def migrate(eng: Engine) -> list[str]:
+    """Additive migrations: any column in the model that an existing table lacks is added
+    (nullable). Warden only ever adds columns, so this keeps SQLite and Postgres databases
+    from older versions working without a migration framework."""
+    from sqlalchemy import inspect, text
+    insp = inspect(eng)
+    added = []
+    with eng.begin() as c:
+        for table in metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {col["name"] for col in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in have:
+                    ctype = col.type.compile(dialect=eng.dialect)
+                    c.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {ctype}'))
+                    added.append(f"{table.name}.{col.name}")
+    return added
 
 
 @lru_cache(maxsize=8)

@@ -20,6 +20,62 @@ def _automatable(action: str, pol) -> tuple[bool, str]:
     return True, ""
 
 
+OTHER_CASE = __import__("re").compile(r"^(ALT|INC|CASE|PROP)-\S+$", __import__("re").I)
+SUSPICIOUS_TARGET = __import__("re").compile(r"[:/@\\]|\s{2,}|https?", __import__("re").I)
+
+
+def _normalize(a: RecommendedAction, alert: Alert, pol, case_ids: set[str]) -> RecommendedAction:
+    """Tickets always describe this case and notifications only go to configured channels,
+    so a model's free-text target ("SOC team", "Incident 42") is mapped onto the case id or
+    the default channel. Anything shaped like an address, a URL, or another case's id is
+    left as written so the checks below deny it."""
+    t = (a.target or "").strip()
+    if a.action == "create_ticket" and t not in case_ids and not OTHER_CASE.match(t) and not SUSPICIOUS_TARGET.search(t):
+        return RecommendedAction(action=a.action, target=alert.id, reason=a.reason)
+    if a.action == "notify" and t not in pol.notify_targets and not SUSPICIOUS_TARGET.search(t):
+        default = "soc" if "soc" in pol.notify_targets else sorted(pol.notify_targets)[0]
+        return RecommendedAction(action=a.action, target=default, reason=a.reason)
+    return a
+
+
+# Playbook rules encoded as policy: containment these playbooks say must never be automatic.
+APPROVAL_ONLY = {
+    "impossible_travel": {"block_ip"},      # PB-007: one of the two addresses is the real user
+    "new_geo_login": {"block_ip"},          # PB-010: travel and VPNs; context, not containment
+}
+
+
+def _naming(alert: Alert, target: str) -> list[Alert]:
+    return [m for m in (alert.members or [alert])
+            if target in m.all_ips() or target in m.hosts or target in m.users]
+
+
+def _playbook_forbids_auto(alert: Alert, a: RecommendedAction) -> bool:
+    """True when every alert that names the target comes from a rule whose playbook says
+    this containment waits for a person. Another rule naming the same target lifts it."""
+    names = _naming(alert, a.target)
+    return bool(names) and all(a.action in APPROVAL_ONLY.get(m.rule, set()) for m in names)
+
+
+def _has_cloud_evidence(alert: Alert) -> bool:
+    from .detections import REGISTRY, load_all
+    load_all()
+    return any("cloud" in getattr(REGISTRY.get(m.rule), "event_kinds", ()) for m in (alert.members or [alert]))
+
+
+def _internal(ip: str) -> bool:
+    from .detections._network import is_internal
+    return is_internal(ip)
+
+
+def _host_is_actor(alert: Alert, host: str) -> bool:
+    """Auto-isolation needs an endpoint or network detection that names this host as where
+    the activity ran. Identity alerts carry the server that logged the event (a DC, a VPN
+    gateway), which is the victim, not the machine to cut off."""
+    from .correlate import _host_scoped
+    return any(host in m.hosts and _host_scoped(m.rule) for m in (alert.members or [alert]))
+
+
 def canonical_ip(v: str) -> str | None:
     """The one spelling of an address guardrails accept. Rejects CIDRs, padding, leading
     zeros, and IPv4-mapped IPv6 - all ways to smuggle a safelisted address past a string match."""
@@ -96,7 +152,9 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0, policy=None, verif
     pol = policy or _policy()
     out: list[Decision] = []
     ticketed, notified, seen = False, set(), set()
-    for a in analysis.recommended_actions:
+    case_ids = {alert.id, *(m.id for m in alert.members)}
+    recs = [_normalize(a, alert, pol, case_ids) for a in analysis.recommended_actions]
+    for a in recs:
         if (a.action, a.target) in seen:
             out.append(Decision(a, "deny", "duplicate of an earlier recommendation"))
             continue
@@ -121,6 +179,9 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0, policy=None, verif
             if _safelisted(canon, pol.ip_safelist):
                 out.append(Decision(a, "deny", "target is on infrastructure safelist (SEC-012 §3)"))
                 continue
+            if _internal(canon):
+                out.append(Decision(a, "deny", "internal address: contain the machine with isolate_host, not a perimeter block (RP-001)"))
+                continue
         if a.action not in LOW_IMPACT and verified is False:
             out.append(Decision(a, "approve", "analysis failed entity verification; a human checks it first"))
             continue
@@ -130,7 +191,7 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0, policy=None, verif
         if a.action == "notify" and a.target and a.target not in pol.notify_targets:
             out.append(Decision(a, "deny", f"notify target {a.target!r} is not an approved channel"))
             continue
-        if a.action == "create_ticket" and a.target and a.target not in {alert.id, *(m.id for m in alert.members)}:
+        if a.action == "create_ticket" and a.target and a.target not in case_ids:
             out.append(Decision(a, "deny", "ticket must reference this case"))
             continue
         if a.action == "lock_user" and a.target not in alert.users:
@@ -138,6 +199,12 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0, policy=None, verif
             continue
         if a.action == "isolate_host" and a.target not in alert.hosts:
             out.append(Decision(a, "deny", "model proposed a host not in the alert evidence"))
+            continue
+        if a.action == "disable_access_key" and not _has_cloud_evidence(alert):
+            out.append(Decision(a, "deny", "access keys are cloud credentials; no cloud evidence in this case"))
+            continue
+        if a.action in ("block_ip", "isolate_host") and _playbook_forbids_auto(alert, a):
+            out.append(Decision(a, "approve", f"playbook for {', '.join(sorted({m.rule for m in _naming(alert, a.target)}))} forbids automatic {a.action}"))
             continue
         if a.action == "disable_access_key" and a.target not in _principals(alert):
             out.append(Decision(a, "deny", "model proposed a principal not in the alert evidence"))
@@ -151,6 +218,9 @@ def evaluate(alert: Alert, analysis: Analysis, bump: int = 0, policy=None, verif
         ok, why_not = _automatable(a.action, pol)
         if not ok:
             out.append(Decision(a, "approve", why_not))
+            continue
+        if a.action == "isolate_host" and not _host_is_actor(alert, a.target):
+            out.append(Decision(a, "approve", "no endpoint or network rule names this host as the actor; it may only be where activity was logged"))
             continue
         if a.action == "isolate_host" and _host_tier(alert, a.target) == "crown_jewel":
             out.append(Decision(a, "approve", "crown-jewel hosts are never auto-isolated (RP-004)"))

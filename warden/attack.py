@@ -165,6 +165,11 @@ def index_techniques(techniques: list[dict], kb=None, batch: int = 500) -> int:
     return len(ids)
 
 
+def revoked_ids(bundle: dict) -> list[str]:
+    return sorted({_external_id(o) for o in bundle.get("objects", [])
+                   if o.get("type") == "attack-pattern" and (o.get("revoked") or o.get("x_mitre_deprecated")) and _external_id(o)})
+
+
 def write_docs(techniques: list[dict], out: Path | None = None) -> Path:
     out = out or settings.attack_dir
     out.mkdir(parents=True, exist_ok=True)
@@ -178,6 +183,7 @@ def ingest(url: str | None = None, file: Path | None = None, index: bool = True,
     bundle = fetch_bundle(url, file)
     techniques = parse(bundle)
     out = write_docs(techniques, out)
+    (out / "_revoked.json").write_text(json.dumps(revoked_ids(bundle)))
     n_chunks = index_techniques(techniques, kb) if index else 0
     (out / "_manifest.json").write_text(json.dumps({
         "source": str(file) if file else (url or BUNDLE_URL),

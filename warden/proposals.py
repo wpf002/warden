@@ -37,20 +37,42 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 # ---------------------------------------------------------------- model output schema
+class ExpectedAlertSpec(BaseModel):
+    rule: str = Field(description="the new detection id")
+    match_user: str = Field("", description="optional: a user the alert must name")
+    match_host: str = Field("", description="optional: a host the alert must name")
+    label: str = Field(description="true_positive or false_positive")
+
+
+# Structured output constrains free-form objects to {} (no declared properties), so events
+# travel as JSON Lines text and are parsed and validated here.
 class FixtureSpec(BaseModel):
-    events: list[dict] = Field(description="Warden JSON events (with 'kind' and 'ts') covering the positive and the near-miss")
-    expected_alerts: list[dict] = Field(description="[{rule, match: {...}, label}] for the positive only")
-    description: str
+    events_jsonl: str = Field(description="Warden JSON events, one per line, each with 'kind' and 'ts'; "
+                                          "the positive and at least one near-miss")
+    expected_alerts: list[ExpectedAlertSpec] = Field(description="one entry per alert the positive should raise")
+    description: str = Field(description="one sentence: what the positive is and what the near-miss is")
+
+    @property
+    def events(self) -> list[dict]:
+        out = []
+        for line in self.events_jsonl.splitlines():
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return out
 
 
 class ProposalDraft(BaseModel):
     detection_id: str = Field(description="new snake_case rule id")
     mitre: list[str]
     rationale: str = Field(description="why this rule, what it catches, what it deliberately ignores")
+    fixture: FixtureSpec = Field(description="complete; the evidence as a positive plus at least one near-miss")
+    test_code: str = Field(description="complete pytest module for tests/test_proposed_<id>.py; never a placeholder")
     detection_code: str = Field(description="complete Python module for warden/detections/<id>.py")
     playbook_markdown: str = Field(description="complete markdown for data/knowledge/playbook-<id-with-hyphens>.md")
-    fixture: FixtureSpec
-    test_code: str = Field(description="complete pytest module for tests/test_proposed_<id>.py")
 
 
 # ---------------------------------------------------------------- anonymization
@@ -70,8 +92,11 @@ class Anonymizer:
         return m[v]
 
     def user(self, v: str) -> str:
-        return v if (v or "").lower() in self.KEEP_USERS or (v or "").startswith("S-1-5-") and len(v) < 12 \
-            else self._p("user", v, "user-{:02d}")
+        if (v or "").lower() in self.KEEP_USERS or (v or "").startswith("S-1-5-") and len(v) < 12:
+            return v
+        if v.endswith("$") and len(v) > 1:      # a machine account stays recognisably a machine account
+            return self._p("user", v, "machine-{:02d}") + "$"
+        return self._p("user", v, "user-{:02d}")
 
     def host(self, v: str) -> str:
         return self._p("host", v.lower(), "host-{:02d}") if v else v
@@ -126,7 +151,19 @@ def check_code(code: str, allowed: set[str], kind: str) -> list[str]:
         tree = ast.parse(code)
     except SyntaxError as e:
         return [f"{kind}: syntax error line {e.lineno}: {e.msg}"]
+    # getattr(obj, "plain_name") is ordinary defensive code; getattr with a computed or
+    # underscore name is how sandbox escapes start. Allow only the first.
+    safe_getattr = set()
     for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr":
+            name = node.args[1] if len(node.args) > 1 else None
+            if isinstance(name, ast.Constant) and isinstance(name.value, str) and not name.value.startswith("_"):
+                safe_getattr.add(id(node.func))
+            else:
+                problems.append(f"{kind}: getattr needs a literal, non-underscore attribute name")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and id(node) in safe_getattr:
+            continue
         if isinstance(node, ast.Import):
             for a in node.names:
                 if a.name.split(".")[0] not in {x.split(".")[0] for x in allowed if not x.startswith(".")}:
@@ -263,9 +300,13 @@ def create(trigger: str, events: list, context_query: str = "", techniques: list
     pid = "PROP-" + hashlib.sha1(f"{trigger}|{source}|{datetime.now(timezone.utc).isoformat()}".encode()).hexdigest()[:8].upper()
     eng = store.engine if store else None
     draft = proposer.propose(system, user)
+    gaps_found = incomplete(draft)
+    if gaps_found:      # one retry, telling the model exactly what came back empty
+        draft = proposer.propose(system, user + "\n\nYour previous draft was incomplete: " + "; ".join(gaps_found)
+                                 + ". Return every field complete. No placeholders.")
     files = materialize(draft)
     usage = getattr(proposer, "last_usage", {}) or {}
-    _save(pid, eng, trigger=trigger, source=source, status="generated", rule_id=draft.detection_id,
+    _save(pid, eng, trigger=trigger, source=source, status="generated", rule_id=draft.detection_id, evidence=evidence,
           rationale=draft.rationale, files=files, model=usage.get("model", getattr(proposer, "model", "")),
           prompt_version=load("propose").tag, cost_usd=usage.get("cost_usd"))
     problems = check_detection(draft.detection_code, draft.detection_id) + \
@@ -273,16 +314,33 @@ def create(trigger: str, events: list, context_query: str = "", techniques: list
     if problems:
         _save(pid, eng, status="rejected_static", checks={"static": problems})
         return pid
-    results = sandbox_eval(files, draft.detection_id)
-    ok = results.get("test", {}).get("ok") and results.get("positive_fires")
-    _save(pid, eng, status="ready_for_review" if ok else "failed_eval", checks={"static": []}, eval=results)
+    results = sandbox_eval(files, draft.detection_id, evidence)
+    ok = results.get("test", {}).get("ok") and results.get("positive_fires") and results.get("fires_on_evidence", True)
+    _save(pid, eng, status="ready_for_review" if ok else "failed_eval", checks={"static": []}, eval=results,
+          evidence=evidence)
     return pid
+
+
+def incomplete(d: ProposalDraft) -> list[str]:
+    out = []
+    if len(d.test_code.strip()) < 80 or "placeholder" in d.test_code.lower()[:200]:
+        out.append("test_code is empty or a placeholder")
+    if not any(e.get("kind") and e.get("ts") for e in d.fixture.events):
+        out.append("fixture.events_jsonl has no complete events")
+    if "placeholder" in d.fixture.description.lower():
+        out.append("fixture.description is a placeholder")
+    if len(d.detection_code.strip()) < 200:
+        out.append("detection_code is empty")
+    return out
 
 
 def materialize(d: ProposalDraft) -> dict[str, str]:
     slug = d.detection_id.replace("_", "-")
     fx = d.fixture
-    expected = {"name": f"proposed: {d.detection_id}", "description": fx.description, "alerts": fx.expected_alerts}
+    expected = {"name": f"proposed: {d.detection_id}", "description": fx.description,
+                "alerts": [{"rule": e.rule, "label": e.label,
+                            "match": {k: v for k, v in (("user", e.match_user), ("host", e.match_host)) if v}}
+                           for e in fx.expected_alerts]}
     return {
         f"warden/detections/{d.detection_id}.py": d.detection_code,
         f"data/knowledge/playbook-{slug}.md": d.playbook_markdown,
@@ -317,11 +375,13 @@ for p in paths:
     except Exception as e:
         hits.append({"file": str(p), "error": str(e)[:200]})
 out["historical_hits"] = hits
+if len(sys.argv) > 2 and sys.argv[2]:
+    out["fires_on_evidence"] = bool(detect(load_file(Path(sys.argv[2]), fmt="generic"), only=[rule]))
 print("WARDEN_SANDBOX_RESULT " + json.dumps(out))
 '''
 
 
-def sandbox_eval(files: dict[str, str], rule_id: str, timeout: int = 300) -> dict:
+def sandbox_eval(files: dict[str, str], rule_id: str, evidence: list[dict] | None = None, timeout: int = 300) -> dict:
     """Copy the repo to a temp dir, add the proposal, and run its test, both eval suites,
     and a replay of the new rule over every event on disk, in a subprocess with no secrets
     in its environment. The static checks already refused I/O, network, and dynamic code;
@@ -334,6 +394,8 @@ def sandbox_eval(files: dict[str, str], rule_id: str, timeout: int = 300) -> dic
         for rel, content in files.items():
             (repo / rel).parent.mkdir(parents=True, exist_ok=True)
             (repo / rel).write_text(content)
+        if evidence:
+            (tmp / "evidence.jsonl").write_text("\n".join(json.dumps(e) for e in evidence) + "\n")
         env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp), "WARDEN_LLM": "mock", "WARDEN_EMBEDDINGS": "hash",
                "WARDEN_DATA_DIR": str(repo / "data"), "PYTHONPATH": str(repo), "PYTHONDONTWRITEBYTECODE": "1"}
         out: dict = {}
@@ -341,7 +403,8 @@ def sandbox_eval(files: dict[str, str], rule_id: str, timeout: int = 300) -> dic
         t = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", test], cwd=repo, env=env,
                            capture_output=True, text=True, timeout=timeout)
         out["test"] = {"ok": t.returncode == 0, "output": (t.stdout + t.stderr)[-2500:]}
-        e = subprocess.run([sys.executable, "-c", SANDBOX_SCRIPT, rule_id], cwd=repo, env=env, capture_output=True,
+        e = subprocess.run([sys.executable, "-c", SANDBOX_SCRIPT, rule_id, str(tmp / "evidence.jsonl") if evidence else ""],
+                           cwd=repo, env=env, capture_output=True,
                            text=True, timeout=timeout)
         line = next((ln for ln in e.stdout.splitlines() if ln.startswith("WARDEN_SANDBOX_RESULT ")), None)
         if line:
@@ -393,6 +456,24 @@ def should_propose(case) -> bool:
 
 
 # ---------------------------------------------------------------- review and PR
+def recheck(pid: str, store=None) -> str:
+    """Re-run static checks and the sandbox on a stored proposal (after a checker or
+    harness change) without asking the model again."""
+    eng = store.engine if store else None
+    p = _row(pid, eng)
+    det = next(v for k, v in p["files"].items() if k.startswith("warden/detections/"))
+    test = next(v for k, v in p["files"].items() if k.startswith("tests/"))
+    problems = check_detection(det, p["rule_id"]) + check_code(test, TEST_IMPORTS, "test")
+    if problems:
+        _save(pid, eng, status="rejected_static", checks={"static": problems})
+        return "rejected_static"
+    results = sandbox_eval(p["files"], p["rule_id"], p.get("evidence"))
+    ok = results.get("test", {}).get("ok") and results.get("positive_fires") and results.get("fires_on_evidence", True)
+    status = "ready_for_review" if ok else "failed_eval"
+    _save(pid, eng, status=status, checks={"static": []}, eval=results)
+    return status
+
+
 def review(pid: str, decision: str, actor: str, note: str = "", store=None, open_pr: bool = True) -> dict:
     """approve -> commit the files on a new branch in a separate worktree and open a PR.
     reject -> record why. Either way the decision lands in the audit log."""

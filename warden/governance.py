@@ -100,8 +100,16 @@ TECH_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b")
 
 
 def _known_techniques() -> set[str]:
+    """Current techniques plus revoked ones: a model trained on an older ATT&CK release
+    citing T1562.001 is out of date, not inventing things."""
     d = settings.attack_dir
-    return {p.stem for p in d.glob("T*.md")} if d.exists() else set()
+    if not d.exists():
+        return set()
+    known = {p.stem for p in d.glob("T*.md")}
+    rv = d / "_revoked.json"
+    if rv.exists():
+        known |= set(json.loads(rv.read_text()))
+    return known
 
 
 def evidence_strings(alert) -> str:
@@ -113,7 +121,10 @@ def verify(alert, analysis, docs: list[dict] | None = None) -> list[str]:
     problems = []
     ev = evidence_strings(alert) + " " + " ".join(d.get("text", "") for d in (docs or [])).lower()
     text = analysis.explanation + " " + " ".join(f"{r.target} {r.reason}" for r in analysis.recommended_actions)
-    for ip in set(IP_RE.findall(text)):
+    for m in IP_RE.finditer(text):
+        ip = m.group(0)
+        if text[m.end():m.end() + 1] == "/":      # a CIDR like 185.220.100.0/24 describes a range, not an address
+            continue
         if ip.lower() not in ev:
             problems.append(f"names IP {ip}, which is not in the evidence")
     for cve in set(CVE_RE.findall(text)):

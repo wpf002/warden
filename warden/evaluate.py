@@ -332,7 +332,7 @@ def _score_subject(rep: Report, case: EvalCase, sub: Alert, label, expect_action
         if got != want:
             rep.disagreements.append(f"{case.name}: {key} {action} wanted {want}, got {got}")
     for action, got in verdicts.items():
-        if got == "execute" and action not in expect_actions and expect_actions:
+        if got == "execute" and action not in expect_actions and expect_actions and action not in guardrails.LOW_IMPACT:
             rep.unexpected_executes.append(f"{case.name}: {key} executed unexpected {action}")
 
 

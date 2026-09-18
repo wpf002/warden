@@ -13,6 +13,8 @@ from .detections import REGISTRY, active, alert_id, load_all, run_all  # noqa: F
 from .events import Event
 from .models import Alert
 
+load_all()   # importing the front door registers every detection, so REGISTRY is complete
+
 
 def detect(events: list[Event], only: list[str] | None = None, prior: list[Event] | None = None,
            ioc_lookup=None, suppressed_features: set | None = None, profiles: dict | None = None) -> list[Alert]:

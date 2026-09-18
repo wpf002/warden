@@ -249,6 +249,9 @@ def cmd_proposals(a):
     from . import proposals
     from .store import CaseStore
     store = CaseStore()
+    if a.id and a.decision == "recheck":
+        print(proposals.recheck(a.id, store=store))
+        return
     if a.id and a.decision:
         print(proposals.review(a.id, a.decision, a.actor, a.note or "", store=store, open_pr=not a.no_pr))
         return
@@ -363,7 +366,7 @@ def main(argv=None):
 
     pq = sub.add_parser("proposals", help="list, show, approve, or reject detection proposals")
     pq.add_argument("id", nargs="?")
-    pq.add_argument("decision", nargs="?", choices=["approve", "reject"])
+    pq.add_argument("decision", nargs="?", choices=["approve", "reject", "recheck"])
     pq.add_argument("--actor", default="cli")
     pq.add_argument("--note", default=None)
     pq.add_argument("--no-pr", action="store_true", help="approve without opening a pull request")

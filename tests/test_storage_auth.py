@@ -145,3 +145,17 @@ def test_hec_receiver(monkeypatch, tmp_path):
     r = c.post("/services/collector/event", content=body, headers={"Authorization": "Splunk t0ken"})
     assert r.status_code == 200 and r.json()["stored"] == 2
     assert c.post("/services/collector/event", content="{bad", headers={"Authorization": "Splunk t0ken"}).status_code == 400
+
+
+def test_older_databases_gain_new_columns(tmp_path):
+    import sqlite3
+    from warden import db
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE proposals (id VARCHAR(32) PRIMARY KEY, status VARCHAR(32))")
+    con.commit()
+    con.close()
+    eng = db.make_engine(f"sqlite:///{path}")
+    from sqlalchemy import inspect
+    cols = {c["name"] for c in inspect(eng).get_columns("proposals")}
+    assert {"evidence", "pr_url", "files"} <= cols
