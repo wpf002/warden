@@ -149,6 +149,7 @@ class MockAnalyzer:
                                ["isolate_host", "create_ticket", "notify"]),
         "persistence_mechanism": ("T1543.003 Create or Modify System Process: Windows Service", 74, "high", "medium",
                                   ["create_ticket", "notify"]),
+        "edr_alert": ("T1003 OS Credential Dumping", 88, "critical", "low", ["isolate_host", "create_ticket", "notify"]),
         "log_clearing": ("T1685.005 Indicator Removal: Clear Windows Event Logs", 82, "high", "low",
                          ["isolate_host", "create_ticket", "notify"]),
         "security_tool_tamper": ("T1685 Impair Defenses: Disable or Modify Tools", 85, "critical", "low",

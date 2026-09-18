@@ -1,0 +1,40 @@
+{
+  "name": "Falcon critical credential-theft detection",
+  "description": "Falcon flags a procdump of LSASS as critical; an earlier low-severity PUP verdict stays in the EDR.",
+  "alerts": [
+    {
+      "rule": "edr_alert",
+      "match": {
+        "host": "ws-44"
+      },
+      "label": "true_positive",
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      },
+      "note": "the low-severity PUP verdict on the same host must not raise a second alert"
+    },
+    {
+      "rule": "credential_dumping",
+      "match": {
+        "host": "ws-44"
+      },
+      "label": "true_positive"
+    }
+  ],
+  "incidents": [
+    {
+      "rules": [
+        "credential_dumping",
+        "edr_alert"
+      ],
+      "label": "true_positive",
+      "expect_actions": {
+        "isolate_host": "execute",
+        "create_ticket": "execute",
+        "notify": "execute"
+      }
+    }
+  ]
+}

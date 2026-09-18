@@ -88,7 +88,7 @@ def correlate(alerts: list[Alert], window_sec: int | None = None) -> list[Alert]
 STAGE = {  # rough kill-chain order, used to title the chain
     "suspicious_parent_child": 2, "lolbin_abuse": 2, "encoded_powershell": 2, "intel_ioc_match": 3, "beaconing": 3,
     "dns_tunneling": 3, "credential_dumping": 4, "persistence_mechanism": 4, "security_tool_tamper": 4,
-    "log_clearing": 4, "lateral_movement_fanout": 5, "port_scan": 3, "data_exfiltration": 6,
+    "log_clearing": 4, "edr_alert": 4, "lateral_movement_fanout": 5, "port_scan": 3, "data_exfiltration": 6,
     "ransomware_precursor": 6, "mass_file_encryption": 7, "mailbox_forwarding_rule": 4, "iam_admin_grant": 5,
     "new_access_key": 5, "public_bucket": 6, "cloud_logging_disabled": 4, "unusual_region": 5,
     "console_login_no_mfa": 3,

@@ -554,6 +554,29 @@ def case_ioc():
     write("25-intel-c2-hit", evs, spec)
 
 
+def case_edr_detection():
+    evs = endpoint_noise(T0, 20, 41, host="ws-44", user="dpatel")
+
+    def falcon(ts, name, sev, tactic, image, cmd, user="dpatel"):
+        return proc(ts, source="crowdstrike", host="ws-44", user=user, action="start", process_name=image.lower(),
+                    image=f"C:\\Users\\{user}\\AppData\\Local\\Temp\\{image}", command_line=cmd,
+                    parent_name="explorer.exe",
+                    raw={"falcon_detection": {"DetectName": name, "SeverityName": sev, "Tactic": tactic,
+                                              "Technique": "OS Credential Dumping" if tactic == "Credential Access" else "PUP"}})
+    evs.append(falcon(T0 + timedelta(minutes=12), "NGAV", "Low", "Malware", "toolbar-setup.exe", "toolbar-setup.exe /s"))
+    evs.append(falcon(T0 + timedelta(minutes=40), "CredentialTheft", "Critical", "Credential Access", "procdump64.exe",
+                      "procdump64.exe -accepteula -ma lsass.exe out.dmp"))
+    spec = {"name": "Falcon critical credential-theft detection",
+            "description": "Falcon flags a procdump of LSASS as critical; an earlier low-severity PUP verdict stays in the EDR.",
+            "alerts": [{"rule": "edr_alert", "match": {"host": "ws-44"}, "label": "true_positive",
+                        "expect_actions": {"isolate_host": "execute", **TICKET},
+                        "note": "the low-severity PUP verdict on the same host must not raise a second alert"},
+                       {"rule": "credential_dumping", "match": {"host": "ws-44"}, "label": "true_positive"}],
+            "incidents": [{"rules": ["credential_dumping", "edr_alert"], "label": "true_positive",
+                           "expect_actions": {"isolate_host": "execute", **TICKET}}]}
+    write("31-falcon-edr-detection", evs, spec)
+
+
 def case_cloud_takeover():
     base = T0 + timedelta(minutes=5)
     evs = [cloud(base, "ConsoleLogin", responseElements={"ConsoleLogin": "Success"}, additionalEventData={"MFAUsed": "No"}),
@@ -702,15 +725,16 @@ def case_routine_day():
 
 
 if __name__ == "__main__":
-    if EVAL.exists():
-        shutil.rmtree(EVAL)
-    EVAL.mkdir(parents=True)
+    EVAL.mkdir(parents=True, exist_ok=True)
+    for d in EVAL.iterdir():  # regenerate our numbered cases; keep cases merged from proposals
+        if d.is_dir() and not d.name.startswith("proposed-"):
+            shutil.rmtree(d)
     for fn in [case_brute_force, case_password_spray, case_impossible_travel, case_mfa_fatigue, case_service_account_fp,
                case_quiet_hour, case_credential_stuffing, case_new_geo_benign, case_attack_chain, case_dormant,
                case_service_account_rdp, case_create_then_privilege, case_session_replay, case_reset_abuse,
                case_lockout_storm, case_single_reset, case_phish_chain, case_ransomware, case_cred_dump_and_cleanup,
                case_lolbin_persistence_tamper, case_dns_tunnel, case_internal_scan, case_exfil, case_ioc,
                case_cloud_takeover, case_public_bucket_and_forwarding, case_benign_endpoint_and_cloud,
-               case_planted_unknown, case_routine_day]:
+               case_planted_unknown, case_routine_day, case_edr_detection]:
         fn()
     print(f"\nfixtures written to {EVAL}")
