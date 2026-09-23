@@ -16,9 +16,7 @@ through guardrails** that are policy in code, versioned with the repo.
 ```bash
 git clone git@github.com:wpf002/warden.git && cd warden
 cp .env.example .env                 # ANTHROPIC_API_KEY (+ ANTHROPIC_WORKSPACE_ID if the key isn't workspace-scoped)
-docker compose up -d --build         # API + console + Postgres + nightly scheduler
-open http://localhost:8000
-docker compose exec warden warden demo   # sample cases for the console
+scripts/warden.sh start              # everything, seeded, with every page opened
 ```
 
 Without Docker: `./bootstrap.sh`, then `python -m warden.cli serve`, and `cd web && npm ci && npm run build`
@@ -49,8 +47,12 @@ Hosted cloud deployment is deferred (see ROADMAP Phase 7). The demo stack stands
 what it would touch, all running locally, with actions executed live against the stand-ins:
 
 ```
-docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+scripts/warden.sh start      # also: restart, stop, status, logs
 ```
+
+It starts Docker if it isn't running, brings up every service, waits for the API, seeds the
+demo scenarios if the store is empty, and opens the console, the vendor sandbox state, the
+inbox, and the metrics page.
 
 | Gap | Stand-in | See it |
 |---|---|---|
