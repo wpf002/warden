@@ -340,7 +340,8 @@ details[open] > summary::before { transform: rotate(90deg); }
 .tl-count { margin-left: 6px; padding: 0 6px; border-radius: 10px; background: var(--accent-soft); font-size: 12px; }
 
 /* facts panel */
-.facts { align-self: start; }
+/* the facts panel matches the analysis card's height rather than floating short */
+.facts { align-self: stretch; }
 .risk-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
 .fact-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 8px; }
 .fact-group + .fact-group { margin-top: 16px; }

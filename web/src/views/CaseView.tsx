@@ -186,22 +186,31 @@ export default function CaseView({ id, user }: { id: string; user: Me }) {
 function humanize(t: string): string {
   return t
     .replace(/^\d+-stage chain on \S+:\s*/i, "")
-    .replace(/Unusual day for (?:user|host) (\S+): logins (\d+), baseline ([\d.]+)[^;]*; failures (\d+), baseline ([\d.]+)[^.]*/i,
+    .replace(/Unusual day for (?:user|host) ([\w.@$-]+): logins (\d+), baseline ([\d.]+) \+\/- [\d.]+ \(z=[\d.]+\)[;,]\s*failures (\d+), baseline ([\d.]+) \+\/- [\d.]+ \(z=[\d.]+\)/i,
       (_m, who, li, lb, fi, fb) => `${who} signed in ${li} times (normally about ${Math.round(+lb)}) and failed ${fi} times (normally about ${Math.round(+fb)})`)
+    .replace(/Unusual day for (?:user|host) ([\w.@$-]+): ([a-z_ ]+) (\d+), baseline ([\d.]+)[^,]*/i,
+      (_m, who, what, n, base) => `${who}: ${what.trim()} ${n}, normally about ${Math.round(+base)}`)
+    .replace(/,?\s*baseline [\d.]+ \+\/- [\d.]+\s*\(z=[\d.]+\)/g, "")
     .replace(/\(z=[\d.]+\)/g, "")
-    .replace(/\bSUCCESS for (\S+)/g, "and $1's password worked")
-    .replace(/\b0 min after\b/g, "seconds after")
-    .replace(/(\d+) min after\b/g, "$1 minutes after")
-    .replace(/every (\d+)s \(jitter [^)]*\)/g, (_m, sec) => `every ${Math.round(+sec / 60)} minutes, like clockwork`)
-    .replace(/\bPowerShell encoded \+ hidden\b/g, "hidden, encoded PowerShell ran")
+    .replace(/,?\s*SUCCESS for ([\w.@$-]+)/g, ", and $1's password worked")
+    .replace(/\b0 min(?:utes)? after\b/g, "seconds after")
+    .replace(/\b1 min(?:utes)? after\b/g, "a minute after")
+    .replace(/\b(\d+) min after\b/g, "$1 minutes after")
+    .replace(/every (\d+)s(?:\s*\(jitter [^)]*\))?/g, (_m, sec) => `every ${Math.round(+sec / 60)} minutes, like clockwork`)
+    .replace(/\bPowerShell encoded \+ hidden\b/g, "Hidden, encoded PowerShell ran")
     .replace(/\bspawned\b/g, "launched")
     .replace(/\breached (\d+) hosts over 445\b/g, "connected to $1 file shares")
+    .replace(/\bMiniDump of LSASS\b/g, "dumped passwords out of memory (LSASS)")
+    .replace(/\brundll32 proxying execution\b/g, "rundll32 was used to run attacker code")
+    .replace(/\s+([,.;])/g, "$1")
     .replace(/\s{2,}/g, " ")
+    .replace(/^[,;.\s]+/, "")
+    .replace(/[.;\s]+$/, "")
     .trim();
 }
 
 function Explanation({ text }: { text: string }) {
-  const parts = humanize(text).split(/;\s*then\s+/i).map((p) => humanize(p)).filter(Boolean);
+  const parts = text.split(/;\s*then\s+/i).map((p) => humanize(p)).filter(Boolean);
   if (parts.length < 3) return <p className="summary" style={{ margin: "0 0 16px" }}>{text}</p>;
   const [lead, ...rest] = parts;
   return (
