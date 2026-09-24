@@ -29,7 +29,7 @@ x-demo-env: &demo
 
 services:
   warden:
-    volumes: [wardendata:/data, ./data/real:/samples:ro]
+    volumes: [wardendata:/data, ./data/real:/samples:ro, ./data/tdl:/data/tdl:ro]
     environment:
       <<: *demo
       WARDEN_DATABASE_URL: postgresql+psycopg://warden:${POSTGRES_PASSWORD:-warden-local}@db:5432/warden

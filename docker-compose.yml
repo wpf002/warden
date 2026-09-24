@@ -24,7 +24,7 @@ services:
       WARDEN_DATA_DIR: /data
       WARDEN_ALLOW_NOAUTH: ${WARDEN_ALLOW_NOAUTH:-1}   # local only: WARDEN_AUTH=none from the host network
     ports: ["127.0.0.1:${WARDEN_PORT:-8000}:8000"]
-    volumes: [wardendata:/data]
+    volumes: [wardendata:/data, ./data/tdl:/data/tdl:ro]   # TDL coverage index (scripts/sync_tdl.py)
     depends_on: { db: { condition: service_healthy } }
 
   scheduler:
