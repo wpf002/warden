@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from .config import settings
@@ -97,7 +98,11 @@ def cmd_eval(a):
         from . import db
         from .llm import get_analyzer
         from .store import CaseStore
-        sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()[:40]
+        try:      # containers have no git; the image can carry the sha in WARDEN_GIT_SHA
+            sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()[:40]
+        except (OSError, subprocess.SubprocessError):
+            sha = ""
+        sha = sha or os.environ.get("WARDEN_GIT_SHA", "")[:40]
         an = "none" if a.no_llm else getattr(get_analyzer(), "model", "") or type(get_analyzer()).__name__
         with CaseStore().engine.begin() as c:
             c.execute(db.eval_runs.insert().values(ts=db.now(), suite="real" if a.real else "synthetic", git_sha=sha,
