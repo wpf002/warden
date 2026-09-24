@@ -51,8 +51,8 @@ scripts/warden.sh start      # also: restart, stop, status, logs
 ```
 
 It starts Docker if it isn't running, brings up every service, waits for the API, seeds the
-demo scenarios if the store is empty, and opens the console, the vendor sandbox state, the
-inbox, and the metrics page.
+demo scenarios if the store is empty, and opens the console. The vendor sandbox state, the
+inbox, and the metrics page are printed as links.
 
 | Gap | Stand-in | See it |
 |---|---|---|

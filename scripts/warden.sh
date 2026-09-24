@@ -3,8 +3,7 @@
 #
 #   scripts/warden.sh start|restart|stop|status|logs
 #
-# Pages opened on start/restart:
-#   console   http://localhost:$WARDEN_PORT      queue, cases, detections, evals
+# Opens the console on start/restart. The support pages are printed, not opened:
 #   vendors   http://localhost:5056/state        fake Okta org + CrowdStrike tenant
 #   inbox     http://localhost:8025              Mailpit: notifications Warden sent
 #   metrics   http://localhost:$WARDEN_PORT/metrics
@@ -27,11 +26,8 @@ ensure_docker() {
   done
 }
 
-open_pages() {
-  command -v open >/dev/null 2>&1 || return 0
-  for url in "$CONSOLE" "http://localhost:5056/state" "http://localhost:8025" "$CONSOLE/metrics"; do
-    open "$url" || true
-  done
+open_console() {
+  command -v open >/dev/null 2>&1 && open "$CONSOLE" || true
 }
 
 wait_healthy() {
@@ -63,7 +59,7 @@ case "${1:-start}" in
     echo "console  $CONSOLE"
     echo "vendors  http://localhost:5056/state"
     echo "inbox    http://localhost:8025"
-    open_pages
+    open_console
     ;;
   stop)   ensure_docker; $DC down --remove-orphans ;;
   status) $DC ps ;;
