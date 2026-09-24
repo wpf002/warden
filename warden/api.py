@@ -297,6 +297,12 @@ def connectors_view(user: User = Depends(require("viewer"))):
             "recent": recent[:20]}
 
 
+@router.get("/coverage")
+def coverage_view(user: User = Depends(require("viewer"))):
+    from . import tdl
+    return tdl.coverage()
+
+
 @router.post("/run")
 def run_now(user: User = Depends(require("analyst"))):
     from .llm import get_analyzer

@@ -70,6 +70,7 @@ export const api = {
   action: (id: string, idx: number, op: "approve" | "deny" | "rollback") =>
     call<CaseFull>(`/cases/${encodeURIComponent(id)}/actions/${idx}/${op}`, { method: "POST" }),
   detections: () => call<any[]>("/detections"),
+  coverage: () => call<any>("/coverage"),
   kb: () => call<any[]>("/kb"),
   kbDoc: (doc: string) => call<{ doc: string; scope: string; text: string }>(`/kb/${encodeURIComponent(doc)}`),
   kbSearch: (q: string) => call<any[]>(`/kb/search?${new URLSearchParams({ q })}`),

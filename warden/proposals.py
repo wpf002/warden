@@ -443,7 +443,11 @@ def gaps(limit: int = 20) -> list[dict]:
         groups = next((ln for ln in text.split("## Associated groups")[1:2]), "")
         techniques.append({"technique": tid, "title": text.splitlines()[0][2:], "tactics": tactics,
                            "groups": len(groups.split(",")) if groups else 0})
-    return sorted(techniques, key=lambda t: -t["groups"])[:limit]
+    from .tdl import coverage
+    tdl_rules = {g["technique"]: g["tdl_rules"] for g in coverage().get("gaps", [])}
+    for t in techniques:      # a gap TDL already writes rules for is better evidenced than one it doesn't
+        t["tdl_rules"] = tdl_rules.get(t["technique"], 0)
+    return sorted(techniques, key=lambda t: (-t["tdl_rules"], -t["groups"]))[:limit]
 
 
 def should_propose(case) -> bool:

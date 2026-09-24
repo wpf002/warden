@@ -179,6 +179,21 @@ def cmd_replay(a):
         print(f"  {'=' if o == n else '!'} {name:14} {o}  ->  {n}")
 
 
+def cmd_coverage(a):
+    from . import tdl
+    c = tdl.coverage()
+    if not c["available"]:
+        raise SystemExit("no TDL index; run python scripts/sync_tdl.py")
+    print(f"{c['covered']}/{c['techniques'] - c['revoked']} TDL techniques covered by {len(__import__('warden').detections.REGISTRY)} detections "
+          f"({c['rules']} TDL rules, {c['revoked']} techniques revoked by ATT&CK)\n")
+    print(f"{'tactic':24} {'covered':>8} {'techniques':>11} {'tdl rules':>10}")
+    for t in c["tactics"]:
+        print(f"{t['tactic']:24} {t['covered']:>8} {t['techniques'] - t['revoked']:>11} {t['tdl_rules']:>10}")
+    print("\ntop gaps (TDL rules behind them):")
+    for g in c["gaps"][:a.limit]:
+        print(f"  {g['technique']:10} {g['name'][:44]:46} {g['tdl_rules']:>3}  {g['tactic']}")
+
+
 def cmd_ingest(a):
     from .ingest import load_file
     from .store import CaseStore
@@ -363,6 +378,10 @@ def main(argv=None):
     rp = sub.add_parser("replay", help="re-run a case's analysis on its recorded inputs and diff")
     rp.add_argument("case_id")
     rp.set_defaults(fn=cmd_replay)
+
+    cv = sub.add_parser("coverage", help="ATT&CK coverage against the TDL library (scripts/sync_tdl.py)")
+    cv.add_argument("--limit", type=int, default=10)
+    cv.set_defaults(fn=cmd_coverage)
 
     ig = sub.add_parser("ingest", help="store a log file's events without detection or LLM calls")
     ig.add_argument("--log", required=True)

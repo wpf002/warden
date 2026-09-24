@@ -163,3 +163,29 @@ def test_mfa_fatigue_quiet_below_threshold():
 def test_mfa_fatigue_does_not_merge_two_users():
     evs = normalize(_pushes(6, True, "asmith") + _pushes(6, True, "jlee"))
     assert {a.users[0] for a in detect(evs, only=["mfa_fatigue"])} == {"asmith", "jlee"}
+
+
+def test_tdl_coverage_index(tmp_path, monkeypatch):
+    """The TDL coverage map: real index shape, revoked techniques excluded from the gaps."""
+    import json
+    from warden import tdl
+    from warden.config import settings
+    d = tmp_path / "tdl"
+    d.mkdir()
+    (d / "index.json").write_text(json.dumps({"rules": [
+        {"rule_id": "TDL-CA-1", "technique_id": "T1110", "technique_name": "Brute Force",
+         "tactic": "Credential Access", "severity": "High", "lifecycle": "Deployed", "platform": ["Windows"]},
+        {"rule_id": "TDL-DE-1", "technique_id": "T9999", "technique_name": "Gone", "tactic": "Defense Evasion",
+         "severity": "Low", "lifecycle": "Proposed", "platform": ["Windows"]},
+        {"rule_id": "TDL-IA-1", "technique_id": "T1190", "technique_name": "Exploit Public-Facing Application",
+         "tactic": "Initial Access", "severity": "High", "lifecycle": "Deployed", "platform": ["Linux"]},
+    ]}))
+    (tmp_path / "attack").mkdir()
+    (tmp_path / "attack" / "_revoked.json").write_text(json.dumps(["T9999"]))
+    monkeypatch.setattr(settings, "data_dir", tmp_path)     # attack_dir derives from data_dir
+    tdl._load.cache_clear()
+    c = tdl.coverage()
+    assert c["available"] and c["rules"] == 3 and c["revoked"] == 1
+    by = {t["technique"]: t for t in c["techniques_detail"]}
+    assert by["T1110"]["covered"] and "brute_force" in by["T1110"]["detections"]
+    assert [g["technique"] for g in c["gaps"]] == ["T1190"]     # T9999 is revoked, not a gap

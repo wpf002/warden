@@ -7,6 +7,7 @@ const DOMAINS = ["all", "identity", "endpoint", "network", "cloud", "anomaly"];
 const PER_PAGE = 15;
 
 export default function Detections() {
+  const [view, setView] = useState("rules");
   const d = useLoad(api.detections);
   const [dom, setDom] = useState("all");
   const [page, setPage] = useState(0);
@@ -23,7 +24,13 @@ export default function Detections() {
     <div className="page">
       <div className="page-head">
         <h1>Detections</h1>
+        <div className="tabs" role="tablist" aria-label="View">
+          <button className="tab" role="tab" aria-selected={view === "rules"} onClick={() => setView("rules")}>Rules</button>
+          <button className="tab" role="tab" aria-selected={view === "coverage"} onClick={() => setView("coverage")}>ATT&amp;CK Coverage</button>
+        </div>
       </div>
+      {view === "coverage" && <Coverage />}
+      {view === "coverage" ? null : (<>
       <div className="toolbar">
         <div className="tabs" role="tablist" aria-label="Domain">
           {DOMAINS.map((k) => (
@@ -75,6 +82,75 @@ export default function Detections() {
           </div>
         )}
       </div>
+      </>)}
+    </div>
+  );
+}
+
+// Coverage against TDL, the Threat Detection Library: which of its ATT&CK techniques Warden covers.
+function Coverage() {
+  const c = useLoad(api.coverage);
+  const [only, setOnly] = useState("gaps");
+  if (c.error) return <ErrorState error={c.error} retry={c.reload} />;
+  if (!c.data) return <Loading rows={8} />;
+  if (!c.data.available) {
+    return <Empty title="No Coverage Index">Run <span className="mono">python scripts/sync_tdl.py</span> to build it from the TDL library.</Empty>;
+  }
+  const d = c.data;
+  const pct = Math.round((d.covered / Math.max(1, d.techniques - d.revoked)) * 100);
+  const techs = (d.techniques_detail ?? []).filter((t: any) =>
+    only === "all" ? true : only === "gaps" ? !t.covered && !t.revoked : t.covered);
+  return (
+    <div className="stack-24">
+      <div className="kpis">
+        <div className="kpi"><div className="label">Techniques Covered</div><div className="value">{d.covered} of {d.techniques - d.revoked}</div><div className="hint">{pct}% of the TDL library</div></div>
+        <div className="kpi"><div className="label">Gaps</div><div className="value">{d.gaps.length}</div><div className="hint">TDL detects these, Warden does not</div></div>
+        <div className="kpi"><div className="label">TDL Rules</div><div className="value">{d.rules}</div><div className="hint">Source of the mapping</div></div>
+      </div>
+      <section className="card card-flush">
+        <div className="card-head"><h2>By Tactic</h2></div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Tactic</th><th className="right">Covered</th><th className="right">Techniques</th><th>Coverage</th><th className="right">TDL Rules</th></tr></thead>
+            <tbody>{d.tactics.map((t: any) => (
+              <tr key={t.tactic}>
+                <td style={{ fontWeight: 500 }}>{t.tactic}</td>
+                <td className="right num">{t.covered}</td>
+                <td className="right num">{t.techniques - t.revoked}</td>
+                <td style={{ width: 200 }}><RateBar value={t.covered / Math.max(1, t.techniques - t.revoked)} /></td>
+                <td className="right num">{t.tdl_rules}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </section>
+      <section className="card card-flush">
+        <div className="card-head">
+          <h2>Techniques</h2>
+          <div className="tabs" role="tablist" aria-label="Filter">
+            {["gaps", "covered", "all"].map((k) => (
+              <button key={k} className="tab" role="tab" aria-selected={only === k} onClick={() => setOnly(k)}>
+                {k[0].toUpperCase() + k.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Technique</th><th>Name</th><th>Tactic</th><th className="right">TDL Rules</th><th>Warden</th></tr></thead>
+            <tbody>{techs.slice(0, 60).map((t: any) => (
+              <tr key={t.technique}>
+                <td className="mono small">{t.technique}</td>
+                <td>{t.name}</td>
+                <td className="small faint">{t.tactic}</td>
+                <td className="right num">{t.tdl_rules}</td>
+                <td>{t.covered ? <div className="row-wrap">{t.detections.map((x: string) => <span key={x} className="tag">{pretty(x)}</span>)}</div>
+                  : <span className="pill st-failed">Gap</span>}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

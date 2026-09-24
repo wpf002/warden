@@ -210,6 +210,17 @@ API emulator) and smtp against Mailpit, verifying each change and each rollback 
 the service's API. Okta, Entra, CrowdStrike, Defender, PAN-OS, Slack, PagerDuty, Jira, and
 ServiceNow are tested against their documented request shapes, not live tenants.
 
+## ATT&CK coverage (TDL)
+
+`scripts/sync_tdl.py` reads the [TDL](https://github.com/wpf002/tdl) library (821
+ATT&CK-mapped rules with native queries for ten SIEMs) and writes `data/tdl/index.json`:
+rule id, technique, tactic, severity, platform. No queries are copied and none are run.
+
+`warden coverage` and the console's Detections -> ATT&CK Coverage tab answer one question
+per technique: does a Warden detection cover it? Techniques ATT&CK has revoked are excluded.
+`warden propose --gaps` ranks uncovered techniques by how many TDL rules exist for them, so
+Claude drafts the best-evidenced gap first. Today: 45 of 203 techniques covered.
+
 ## Eval
 
 The yardstick. No change ships without a number.

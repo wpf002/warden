@@ -310,3 +310,7 @@ details[open] > summary::before { transform: rotate(90deg); }
   .header-actions .btn { flex: 1; justify-content: center; }
   .tl-item { grid-template-columns: 64px 16px minmax(0, 1fr); }
 }
+
+/* audit: a subtle day divider row so a long log stays scannable */
+.table .row-group td { background: var(--surface-2, rgba(255,255,255,0.03)); padding: 6px 12px; letter-spacing: 0.04em;
+  text-transform: uppercase; border-top: 1px solid var(--border); }
