@@ -4,52 +4,105 @@ import { Empty, ErrorState, Loading, pretty, titleCase, useLoad } from "../ui";
 
 type Run = { id: number; ts: string; suite: string; git_sha: string; analyzer: string; metrics: any };
 const SERIES = [
-  { key: "precision", label: "Precision", color: "var(--series-1)" },
-  { key: "recall", label: "Recall", color: "var(--series-2)" },
-  { key: "f1", label: "F1", color: "var(--series-3)" },
+  { key: "precision", label: "Correct Alerts", color: "var(--series-1)" },
+  { key: "recall", label: "Attacks Caught", color: "var(--series-2)" },
+  { key: "f1", label: "Overall", color: "var(--series-3)" },
 ];
+const PER_PAGE = 15;
+
+const pct = (v: number | null | undefined) => (v == null ? "-" : `${Math.round(Number(v) * 100)}%`);
+const day = (ts: string) => new Date(ts).toLocaleDateString(undefined, { month: "long", day: "numeric" });
+
+/** Brier is a 0-1 score where lower is better; say what it means instead of printing it. */
+function calibration(b: number | null | undefined) {
+  if (b == null) return { word: "-", hint: "Not measured" };
+  if (b <= 0.08) return { word: "Accurate", hint: "Risk scores match what really happened" };
+  if (b <= 0.15) return { word: "Close", hint: "Risk scores are roughly right" };
+  return { word: "Off", hint: "Risk scores do not match reality" };
+}
 
 export default function Evals() {
   const h = useLoad<Run[]>(api.evalHistory);
   const [suite, setSuite] = useState("synthetic");
+  const [page, setPage] = useState(0);
   const runs = useMemo(() => (h.data ?? []).filter((r) => r.suite === suite), [h.data, suite]);
   const last = runs[runs.length - 1];
+  const m = last?.metrics;
+  const ruleRows = useMemo(() => Object.entries(m?.per_rule ?? {}), [m]);
+  const pages = Math.max(1, Math.ceil(ruleRows.length / PER_PAGE));
+  const shown = ruleRows.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE);
+  const cal = calibration(m?.brier);
+  const missed = ruleRows.reduce((n, [, c]: [string, any]) => n + c.fn, 0);
+  const falseAlarms = ruleRows.reduce((n, [, c]: [string, any]) => n + c.fp, 0);
+  const caught = ruleRows.reduce((n, [, c]: [string, any]) => n + c.tp, 0);
+
   return (
     <div className="page stack-24">
       <div className="page-head" style={{ marginBottom: 0 }}>
         <h1>Evaluation</h1>
         <div className="tabs" role="tablist" aria-label="Suite">
-          {["synthetic", "real"].map((s) => <button key={s} className="tab" role="tab" aria-selected={suite === s} onClick={() => setSuite(s)}>{titleCase(s)}</button>)}
+          {["synthetic", "real"].map((s) => <button key={s} className="tab" role="tab" aria-selected={suite === s}
+            onClick={() => { setSuite(s); setPage(0); }}>{titleCase(s)}</button>)}
         </div>
       </div>
       {h.error ? <ErrorState error={h.error} retry={h.reload} /> : !h.data ? <Loading rows={8} /> : runs.length === 0 ? (
         <div className="card"><Empty title="No Runs"><code>warden eval --record{suite === "real" ? " --real" : ""}</code></Empty></div>
       ) : (
         <>
-          <section className="kpis" style={{ marginBottom: 0, gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
-            {[["Precision", last.metrics.overall.precision], ["Recall", last.metrics.overall.recall], ["F1", last.metrics.overall.f1],
-              ["Brier ↓", last.metrics.brier], ["Action Agreement", last.metrics.action_agreement],
-              ["Retrieval Hits", last.metrics.retrieval_hit_rate]].map(([l, v]) => (
-              <div key={l as string} className="kpi"><div className="label">{l}</div>
-                <div className="value">{v == null ? "-" : Number(v).toFixed(3)}</div>
-</div>
-            ))}
-          </section>
-          <div className="grid-2">
-            <section className="card"><h2>Detection Quality</h2>
-              <LineChart runs={runs} series={SERIES} domain={[0, 1]} /></section>
-            <section className="card"><h2>Calibration (Brier)</h2>
-              <LineChart runs={runs} series={[{ key: "brier", label: "Brier", color: "var(--series-1)" }]} domain={[0, 0.3]} single /></section>
+          <div className="callout">
+            On {day(last.ts)}, Warden caught <b>{caught}</b> of <b>{caught + missed}</b> known attacks
+            with <b>{falseAlarms === 0 ? "no" : falseAlarms}</b> false alarm{falseAlarms === 1 ? "" : "s"},
+            and agreed with the analyst on {pct(m.action_agreement)} of response decisions.
           </div>
+          <section className="kpis" style={{ marginBottom: 0, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+            <div className="kpi"><div className="label">Attacks Caught</div><div className="value">{pct(m.overall.recall)}</div>
+              <div className="hint">{caught} of {caught + missed} known attacks</div></div>
+            <div className="kpi"><div className="label">Correct Alerts</div><div className="value">{pct(m.overall.precision)}</div>
+              <div className="hint">{falseAlarms === 0 ? "No false alarms" : `${falseAlarms} false alarms`}</div></div>
+            <div className="kpi"><div className="label">Risk Scores</div><div className="value">{cal.word}</div>
+              <div className="hint">{cal.hint}</div></div>
+            <div className="kpi"><div className="label">Agreed With Analyst</div><div className="value">{pct(m.action_agreement)}</div>
+              <div className="hint">On which action to take</div></div>
+            <div className="kpi"><div className="label">Right Playbook Found</div><div className="value">{pct(m.retrieval_hit_rate)}</div>
+              <div className="hint">Playbook in the top 3 retrieved</div></div>
+          </section>
+          {runs.length > 1 && (
+            <div className="grid-2">
+              <section className="card"><h2>Accuracy Over Time</h2>
+                <LineChart runs={runs} series={SERIES} domain={[0, 1]} /></section>
+              <section className="card"><h2>Risk Score Accuracy</h2>
+                <LineChart runs={runs} series={[{ key: "brier", label: "Brier", color: "var(--series-1)" }]} domain={[0, 0.3]} single /></section>
+            </div>
+          )}
           <section className="card card-flush">
-            <div className="card-head"><h2>Latest Run</h2><span className="small faint mono">{last.analyzer} · {last.git_sha?.slice(0, 7)} · {new Date(last.ts).toISOString().slice(0, 16).replace("T", " ")}</span></div>
+            <div className="card-head">
+              <h2>By Rule</h2>
+              <span className="small faint">{day(last.ts)} · {last.analyzer}</span>
+            </div>
             <div className="table-wrap"><table className="table">
-              <thead><tr><th>Rule</th><th className="right">TP</th><th className="right">FP</th><th className="right">FN</th><th className="right">Precision</th><th className="right">Recall</th></tr></thead>
-              <tbody>{Object.entries(last.metrics.per_rule).map(([r, c]: [string, any]) => (
-                <tr key={r}><td>{pretty(r)}</td><td className="right num">{c.tp}</td><td className="right num">{c.fp}</td><td className="right num">{c.fn}</td>
-                  <td className="right num">{c.precision.toFixed(3)}</td><td className="right num">{c.recall.toFixed(3)}</td></tr>
+              <thead><tr><th>Rule</th><th className="right">Caught</th><th className="right">False Alarms</th>
+                <th className="right">Missed</th><th className="right">Correct Alerts</th><th className="right">Attacks Caught</th></tr></thead>
+              <tbody>{shown.map(([r, c]: [string, any]) => (
+                <tr key={r}>
+                  <td>{pretty(r)}</td>
+                  <td className="right num">{c.tp}</td>
+                  <td className="right num">{c.fp ? <span className="sev-critical">{c.fp}</span> : 0}</td>
+                  <td className="right num">{c.fn ? <span className="sev-high">{c.fn}</span> : 0}</td>
+                  <td className="right num">{pct(c.precision)}</td>
+                  <td className="right num">{pct(c.recall)}</td>
+                </tr>
               ))}</tbody>
             </table></div>
+            {ruleRows.length > PER_PAGE && (
+              <div className="card-head" style={{ borderTop: "1px solid var(--border)", borderBottom: "none" }}>
+                <span className="small faint">{page * PER_PAGE + 1}-{Math.min(ruleRows.length, (page + 1) * PER_PAGE)} of {ruleRows.length}</span>
+                <div className="row">
+                  <button className="btn btn-ghost btn-sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button>
+                  <span className="small faint">Page {page + 1} of {pages}</span>
+                  <button className="btn btn-ghost btn-sm" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>Next</button>
+                </div>
+              </div>
+            )}
           </section>
         </>
       )}
