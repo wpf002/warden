@@ -27,6 +27,7 @@ export interface ActionResult {
 export interface CaseFull {
   alert: Alert; retrieved_docs: { id: string; text: string; doc: string; kind: string; technique?: string }[];
   analysis: null | {
+    headline?: string; next_step?: string;
     explanation: string; mitre_attack: string; risk_score: number; severity: Severity;
     false_positive_likelihood: string; recommended_actions: { action: string; target: string; reason: string }[];
     citations: string[];

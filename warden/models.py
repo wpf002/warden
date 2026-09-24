@@ -76,7 +76,12 @@ class RecommendedAction(BaseModel):
 
 class Analysis(BaseModel):
     """Structured LLM output. Schema is the contract; guardrails validate it."""
+    headline: str = Field(default="", description=
+        "One plain-English sentence an analyst can read at a glance: who or what is affected and what "
+        "happened. No rule names, no jargon, under 90 characters.")
     explanation: str
+    next_step: str = Field(default="", description=
+        "The single next thing a human should do, in one short sentence.")
     mitre_attack: str = Field(description="Technique id and name, e.g. T1110.001 Brute Force: Password Guessing")
     risk_score: int = Field(ge=0, le=100)
     severity: Literal["low", "medium", "high", "critical"]

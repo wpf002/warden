@@ -50,7 +50,7 @@ function Doc({ doc }: { doc: string }) {
   const d = useLoad(() => api.kbDoc(doc), [doc]);
   if (d.error) return <ErrorState error={d.error} />;
   if (!d.data) return <Loading rows={12} />;
-  return <article className="prose">{renderMarkdown(d.data.text)}<p className="small faint mono">{doc}.md</p></article>;
+  return <article className="prose">{renderMarkdown(d.data.text)}</article>;
 }
 
 // Minimal markdown to React elements: headings, lists, paragraphs, inline code. Never raw HTML.

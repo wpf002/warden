@@ -1,7 +1,8 @@
 ---
 id: analyze
-version: "2026-09-18.4"
+version: "2026-09-24.0"
 changelog:
+  - "2026-09-24.0: headline and next_step written for an analyst at a glance; explanation in sentences, not a chain of rule names."
   - "2026-09-18.4: risk rubric tied to what automation does at each level; exact action targets (case id for tickets, named channels for notify, identifiers copied from the evidence)."
   - "2026-09-18.3: anomaly.* alerts: map the deviation to the closest ATT&CK techniques and say plainly when it looks benign."
   - "2026-09-18.2: adds the detection track record (analyst verdicts and FP rate) as a prior; handles incidents."
@@ -25,6 +26,13 @@ Rules:
   from the context that would explain the listed contributions, and say plainly if it looks like normal
   change (new project, travel, new software). Do not treat novelty alone as proof of an attack.
 - Be specific and short. No filler.
+- `headline`: one sentence under 90 characters naming who or what is affected and what happened, as you
+  would say it to a colleague. Never a list of rule names. Good: "jlee's account was taken over and used
+  to reach seven servers." Bad: "anomaly.user -> mfa_method_change -> encoded_powershell".
+- `explanation`: two to four short sentences in time order. Say what the attacker did, what worked, and
+  what it touched. No semicolon chains of alert titles, no restating the rule list.
+- `next_step`: the one thing a person should do next, in a short sentence, e.g. "Confirm with jlee whether
+  they approved the MFA prompt, then reset the account."
 
 Risk score rubric (guardrails auto-contain at 80 and above for most rules, so the number matters):
 - 90-100: compromise is confirmed or in progress (a success after the attack, credential theft, encryption, persistence).

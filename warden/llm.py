@@ -107,6 +107,99 @@ class AnthropicAnalyzer:
         return resp.parsed_output
 
 
+# Plain-English fallbacks, used by the mock analyzer and for cases analyzed before the
+# prompt started returning a headline.
+WHAT = {
+    "brute_force": "was hit by repeated password guessing",
+    "credential_stuffing": "was targeted with stolen passwords from many addresses",
+    "password_spray": "accounts were sprayed with one common password",
+    "lockout_storm": "accounts locked out in a burst",
+    "mfa_fatigue": "was flooded with MFA prompts",
+    "mfa_method_change": "had a new MFA method added right after a suspicious sign-in",
+    "impossible_travel": "signed in from two places too far apart to be the same person",
+    "new_geo_login": "signed in from a country they have never used",
+    "dormant_account": "woke up after months of no activity",
+    "service_account_interactive": "was used for an interactive login, which it never does",
+    "credential_dumping": "had credentials stolen out of memory",
+    "log_clearing": "had its event log cleared",
+    "encoded_powershell": "ran hidden, encoded PowerShell",
+    "lolbin_abuse": "ran attacker code through a trusted Windows program",
+    "suspicious_parent_child": "launched a program no document should launch",
+    "persistence_mechanism": "gained a way to survive a reboot",
+    "security_tool_tamper": "had its security tooling disabled",
+    "ransomware_precursor": "had its backups and recovery points destroyed",
+    "mass_file_encryption": "had files encrypted in bulk",
+    "data_exfiltration": "sent an unusual amount of data out",
+    "beaconing": "called out to the same address on a fixed schedule",
+    "dns_tunneling": "smuggled data out through DNS queries",
+    "port_scan": "scanned the internal network",
+    "lateral_movement_fanout": "reached many machines in a short window",
+    "privileged_group_add": "was added to an admin group",
+    "account_create_then_privilege": "created an account and made it an admin minutes later",
+    "machine_account_creates_account": "had a machine account create a user, which never happens normally",
+    "password_reset_abuse": "had passwords reset in bulk",
+    "intel_ioc_match": "talked to an address on a threat intel list",
+    "edr_alert": "was flagged by the endpoint agent",
+    "iam_admin_grant": "was granted full cloud admin rights",
+    "new_access_key": "had a new cloud access key created",
+    "console_login_no_mfa": "signed in to the cloud console without MFA",
+    "cloud_logging_disabled": "had cloud audit logging turned off",
+    "public_bucket": "was opened to the whole internet",
+    "unusual_region": "used a cloud region the account never uses",
+    "mailbox_forwarding_rule": "started forwarding mail outside the company",
+    "session_anomaly": "had its session reused from somewhere else",
+}
+
+
+def _subject(alert: Alert) -> str:
+    focus = (alert.detail or {}).get("focus")
+    if focus:
+        return str(focus)
+    if alert.users:
+        return alert.users[0]
+    if alert.hosts:
+        return alert.hosts[0]
+    return alert.source_ip or "this activity"
+
+
+def _headline(alert: Alert) -> str:
+    """One sentence naming who is affected and what happened."""
+    who = _subject(alert)
+    if alert.is_incident:
+        stages = len({m.rule for m in alert.members})
+        worst = max(alert.members, key=lambda m: STAGE_ORDER.get(m.rule, 0)).rule
+        what = WHAT.get(worst, "was involved in a multi-stage attack")
+        n = len(alert.hosts)
+        where = f" on {alert.hosts[0]}" if n == 1 else f" across {n} hosts" if n > 1 else ""
+        return f"{who} {what}{where}, in a {stages}-stage attack."[:120]
+    what = WHAT.get(alert.rule)
+    if not what:
+        return alert.title
+    return f"{who} {what}."[:120]
+
+
+def _next_step(alert: Alert, an: "Analysis") -> str:
+    pending = [a for a in an.recommended_actions if a.action in ("lock_user", "isolate_host", "block_ip",
+                                                                "disable_access_key")]
+    if an.risk_score >= 80 and pending:
+        a = pending[0]
+        verb = {"lock_user": "Lock", "isolate_host": "Isolate", "block_ip": "Block",
+                "disable_access_key": "Disable the access key for"}[a.action]
+        return f"{verb} {a.target}, then confirm with the owner before restoring access."
+    if an.false_positive_likelihood == "high":
+        return f"Check whether this was expected for {_subject(alert)}; it looks routine."
+    return f"Confirm with {_subject(alert)} or their team whether this activity was theirs."
+
+
+STAGE_ORDER = {"mass_file_encryption": 9, "ransomware_precursor": 8, "data_exfiltration": 8,
+               "credential_dumping": 7, "lateral_movement_fanout": 7, "privileged_group_add": 6,
+               "account_create_then_privilege": 6, "persistence_mechanism": 5, "log_clearing": 5,
+               "security_tool_tamper": 5, "beaconing": 4, "intel_ioc_match": 4, "encoded_powershell": 3,
+               "lolbin_abuse": 3, "suspicious_parent_child": 3, "mfa_method_change": 2,
+               "impossible_travel": 2, "new_geo_login": 1, "credential_stuffing": 1, "password_spray": 1,
+               "brute_force": 1}
+
+
 class MockAnalyzer:
     """Deterministic. Mirrors what the playbooks say so the demo is coherent offline."""
 
@@ -123,6 +216,10 @@ class MockAnalyzer:
             an.risk_score = max(0, an.risk_score - int(30 * worst))
             an.false_positive_likelihood = "high"
             an.explanation += f" Analysts rejected {worst:.0%} of this rule's recent alerts."
+        if not an.headline:
+            an.headline = _headline(alert)
+        if not an.next_step:
+            an.next_step = _next_step(alert, an)
         return an
 
     # rule -> (technique, risk, severity, fp likelihood, actions). Mirrors the playbooks.

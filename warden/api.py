@@ -118,6 +118,11 @@ def case(case_id: str, user: User = Depends(require("viewer"))):
     if not c:
         raise HTTPException(404, "no such case")
     d = c.model_dump(mode="json")
+    # cases analyzed before the prompt returned a headline still get a plain-English one
+    if d.get("analysis") and not d["analysis"].get("headline"):
+        from .llm import _headline, _next_step
+        d["analysis"]["headline"] = _headline(c.alert)
+        d["analysis"]["next_step"] = d["analysis"].get("next_step") or _next_step(c.alert, c.analysis)
     d["summary"] = summary(c)
     d["llm_calls"] = [{k: v for k, v in r.items() if k in ("ts", "model", "prompt_version", "kb_snapshot", "input_tokens",
                                                            "output_tokens", "cost_usd", "latency_ms", "error")}
