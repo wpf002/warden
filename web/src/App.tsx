@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { api, type Me } from "./api";
 import { href, useRoute } from "./router";
 import { ErrorState, Loading, Toasts, useLoad } from "./ui";
@@ -30,22 +30,10 @@ const NAV: [string, string][] = [
   ["evals", "Evaluation"], ["audit", "Audit Log"], ["settings", "Response"],
 ];
 
-function useTheme() {
-  const [theme, setTheme] = useState<string>(() => {
-    try { return localStorage.getItem("warden-theme") || "dark"; } catch { return "dark"; }
-  });
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem("warden-theme", theme); } catch { /* private mode */ }
-  }, [theme]);
-  return [theme, setTheme] as const;
-}
-
 export default function App() {
   const route = useRoute();
   const me = useLoad<Me>(api.me);
   const ov = useLoad(api.overview, [route[0]]);
-  const [theme, setTheme] = useTheme();
   const [section] = route;
 
   let body: ReactNode;
@@ -85,12 +73,6 @@ export default function App() {
               <span className="badge" title={`${ov.data.awaiting_approval} need approval`}>{ov.data.awaiting_approval}</span>}
           </a>
         ))}
-        <div className="nav-foot stack-8">
-          {me.data && <div><div className="muted">{me.data.name}</div><div>{me.data.role[0].toUpperCase() + me.data.role.slice(1)} · {me.data.tenant}</div></div>}
-          <button className="btn btn-ghost btn-sm" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-            {theme === "dark" ? "Light Theme" : "Dark Theme"}
-          </button>
-        </div>
       </nav>
       <main className="main" id="main">{body}</main>
       <Toasts />

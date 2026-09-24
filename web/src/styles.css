@@ -284,7 +284,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 .stencil { font-family: var(--display); text-transform: uppercase; letter-spacing: 0.04em; }
 .kbd { font: 500 12px/1 var(--mono); padding: 2px 4px; border: 1px solid var(--border-strong); border-bottom-width: 2px;
   border-radius: var(--radius-inner); color: var(--text-muted); }
-.tag.link { cursor: pointer; background: transparent; text-decoration: none; }
+.tag.link { cursor: pointer; background: transparent; text-decoration: none; text-transform: uppercase; letter-spacing: 0.04em; }
 .tag.link:hover { border-color: var(--accent); color: var(--text); }
 .table tbody tr.selected { box-shadow: inset 3px 0 0 var(--accent); background: var(--surface-raised); }
 .header-actions { display: flex; gap: 8px; align-items: center; }

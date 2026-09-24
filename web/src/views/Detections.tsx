@@ -1,14 +1,19 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { href } from "../router";
 import { Empty, ErrorState, Loading, RateBar, Sparkline, ago, pretty, useLoad } from "../ui";
 
 const DOMAINS = ["all", "identity", "endpoint", "network", "cloud", "anomaly"];
+const PER_PAGE = 15;
 
 export default function Detections() {
   const d = useLoad(api.detections);
   const [dom, setDom] = useState("all");
+  const [page, setPage] = useState(0);
   const rows = useMemo(() => (d.data ?? []).filter((x) => dom === "all" || x.domain === dom), [d.data, dom]);
+  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  useEffect(() => { setPage(0); }, [dom]);
+  const shown = rows.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE);
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const x of d.data ?? []) c[x.domain] = (c[x.domain] ?? 0) + 1;
@@ -37,7 +42,7 @@ export default function Detections() {
               <table className="table">
                 <thead><tr><th>Rule</th><th>ATT&amp;CK</th><th className="right">Fired</th><th className="right">TP</th>
                   <th className="right">FP</th><th>FP Rate</th><th>Threshold</th><th>8-Week Trend</th><th className="right">Last Fired</th></tr></thead>
-                <tbody>{rows.map((x) => (
+                <tbody>{shown.map((x) => (
                   <tr key={x.id}>
                     <td style={{ maxWidth: 320 }}>
                       <a href={href(`knowledge/${x.playbook}`)} style={{ fontWeight: 500, color: "var(--text)" }} title={x.name}>{pretty(x.id)}</a>
@@ -57,6 +62,18 @@ export default function Detections() {
               </table>
             </div>
           )}
+        {rows.length > PER_PAGE && (
+          <div className="card-head" style={{ borderTop: "1px solid var(--border)", borderBottom: "none" }}>
+            <span className="small faint">
+              {page * PER_PAGE + 1}-{Math.min(rows.length, (page + 1) * PER_PAGE)} of {rows.length}
+            </span>
+            <div className="row">
+              <button className="btn btn-ghost btn-sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button>
+              <span className="small faint">Page {page + 1} of {pages}</span>
+              <button className="btn btn-ghost btn-sm" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>Next</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
