@@ -271,9 +271,30 @@ def connectors_view(user: User = Depends(require("viewer"))):
     pol = policy(user.tenant)
     mapping = {a: n for a, n in (p.split("=") for p in pol.connectors.split(",") if "=" in p)}
     acts = ["block_ip", "lock_user", "isolate_host", "disable_access_key", "notify", "create_ticket"]
+    cases = _store(user).all()
+    stats: dict[str, dict] = {a: {"executed": 0, "failed": 0, "pending_approval": 0, "denied": 0, "rolled_back": 0,
+                                  "last_used": None} for a in acts}
+    recent = []
+    for c in cases:
+        for r in c.actions:
+            st = stats.setdefault(r.action, {"executed": 0, "failed": 0, "pending_approval": 0, "denied": 0,
+                                             "rolled_back": 0, "last_used": None})
+            st[r.status] = st.get(r.status, 0) + 1
+            when = r.ts or c.alert.ts
+            if when and (st["last_used"] is None or when > st["last_used"]):
+                st["last_used"] = when
+            recent.append({"case": c.alert.id, "title": c.alert.title, "action": r.action, "target": r.target,
+                           "status": r.status, "detail": (r.detail or "")[:160], "connector": r.connector,
+                           "ts": when})
+    recent.sort(key=lambda r: (r["ts"] is not None, r["ts"]), reverse=True)
     return {"live": settings.live_actions, "available": connectors.available(),
+            "min_risk": pol.auto_action_min_risk, "rule_thresholds": pol.rule_thresholds,
+            "approval_only": sorted(pol.human_approval_actions),
             "actions": [{"action": a, "connector": mapping.get(a, "mock"), "can_rollback": connectors.can_rollback(a),
-                         "auto": a in pol.auto_actions or a in ("notify", "create_ticket")} for a in acts]}
+                         "auto": a in pol.auto_actions or a in ("notify", "create_ticket"),
+                         "missing_config": connectors.missing_config(mapping.get(a, "mock")),
+                         **stats[a]} for a in acts],
+            "recent": recent[:20]}
 
 
 @router.post("/run")

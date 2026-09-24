@@ -1,7 +1,9 @@
 #!/bin/sh
 # Start, restart, or stop the whole local Warden demo stack and open every page it serves.
 #
-#   scripts/warden.sh start|restart|stop|status|logs
+#   scripts/warden.sh start|restart|real|stop|status|logs
+#
+#   real   replace the demo cases with cases built from the real logs in data/real/
 #
 # Opens the console on start/restart. The support pages are printed, not opened:
 #   vendors   http://localhost:5056/state        fake Okta org + CrowdStrike tenant
@@ -61,8 +63,12 @@ case "${1:-start}" in
     echo "inbox    http://localhost:8025"
     open_console
     ;;
+  real)
+    ensure_docker
+    $DC exec -T warden sh /app/scripts/seed_real.sh
+    ;;
   stop)   ensure_docker; $DC down --remove-orphans ;;
   status) $DC ps ;;
   logs)   shift; $DC logs -f "$@" ;;
-  *)      echo "usage: $0 start|restart|stop|status|logs" && exit 2 ;;
+  *)      echo "usage: $0 start|restart|real|stop|status|logs" && exit 2 ;;
 esac

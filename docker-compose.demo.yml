@@ -9,7 +9,7 @@
 # The analyzer is the offline mock unless WARDEN_LLM=anthropic is exported, so the demo costs
 # nothing in API calls.
 x-demo-env: &demo
-  WARDEN_LLM: ${WARDEN_LLM:-mock}
+  WARDEN_LLM: ${WARDEN_DEMO_LLM:-mock}   # opt in to real analysis with WARDEN_DEMO_LLM=anthropic
   WARDEN_LIVE_ACTIONS: "1"
   WARDEN_CONNECTORS: lock_user=okta,isolate_host=crowdstrike,block_ip=aws_nacl,notify=smtp
   WARDEN_OKTA_ORG: http://vendors:5056
@@ -29,6 +29,7 @@ x-demo-env: &demo
 
 services:
   warden:
+    volumes: [wardendata:/data, ./data/real:/samples:ro]
     environment:
       <<: *demo
       WARDEN_DATABASE_URL: postgresql+psycopg://warden:${POSTGRES_PASSWORD:-warden-local}@db:5432/warden
@@ -64,7 +65,7 @@ services:
       WARDEN_DATABASE_URL: postgresql+psycopg://warden:${POSTGRES_PASSWORD:-warden-local}@db:5432/warden
       WARDEN_DATA_DIR: /data
     env_file: [.env]
-    volumes: [wardendata:/data]
+    volumes: [wardendata:/data, ./data/real:/samples:ro]
     depends_on: { db: { condition: service_healthy }, warden: { condition: service_started },
                   vendors: { condition: service_started }, moto: { condition: service_started } }
     restart: "no"

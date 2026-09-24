@@ -118,3 +118,26 @@ def can_rollback(action: str) -> bool:
 
 def available() -> dict[str, tuple[str, ...]]:
     return {n: c.actions for n, c in sorted(_load().items())}
+
+
+# What each connector needs before it can talk to the vendor. The mock needs nothing.
+REQUIRED_ENV = {
+    "okta": ("WARDEN_OKTA_ORG", "WARDEN_OKTA_TOKEN"),
+    "entra": ("WARDEN_ENTRA_TENANT", "WARDEN_ENTRA_CLIENT_ID", "WARDEN_ENTRA_CLIENT_SECRET"),
+    "crowdstrike": ("WARDEN_CS_CLIENT_ID", "WARDEN_CS_SECRET"),
+    "defender": ("WARDEN_ENTRA_TENANT", "WARDEN_ENTRA_CLIENT_ID", "WARDEN_ENTRA_CLIENT_SECRET"),
+    "paloalto": ("WARDEN_PANOS_HOST", "WARDEN_PANOS_KEY"),
+    "aws_nacl": ("WARDEN_AWS_NACL_ID",),
+    "aws_iam": (),
+    "slack": ("WARDEN_SLACK_WEBHOOK",),
+    "pagerduty": ("WARDEN_PD_ROUTING_KEY",),
+    "smtp": ("WARDEN_SMTP_HOST", "WARDEN_SMTP_TO"),
+    "jira": ("WARDEN_JIRA_URL", "WARDEN_JIRA_USER", "WARDEN_JIRA_TOKEN"),
+    "servicenow": ("WARDEN_SNOW_URL", "WARDEN_SNOW_USER", "WARDEN_SNOW_PASSWORD"),
+}
+
+
+def missing_config(name: str) -> list[str]:
+    """Env vars this connector still needs. Empty means it is ready to call the vendor."""
+    import os
+    return [v for v in REQUIRED_ENV.get(name, ()) if not os.environ.get(v)]

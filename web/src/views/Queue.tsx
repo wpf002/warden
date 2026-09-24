@@ -3,6 +3,7 @@ import { api, type CaseSummary, type Me } from "../api";
 import { go } from "../router";
 import { Button, CaseStatus, Empty, ErrorState, Loading, Risk, SeverityPill, ago, memo, pretty, title, toast, useKeys, useLoad } from "../ui";
 
+const PER_PAGE = 20;
 const TABS: [string, string][] = [["active", "Active"], ["awaiting_approval", "Needs Approval"], ["closed", "Closed"], ["all", "All"]];
 const SEVS = ["critical", "high", "medium", "low"] as const;
 const SEV_VAR: Record<string, string> = { critical: "var(--critical)", high: "var(--high)", medium: "var(--medium)", low: "var(--low)" };
@@ -12,6 +13,7 @@ export default function Queue({ user }: { user: Me }) {
   const [q, setQ] = useState(() => memo.get("queue.q", ""));
   const [sev, setSev] = useState<string | null>(() => memo.get("queue.sev", null));
   const [sel, setSel] = useState(0);
+  const [page, setPage] = useState(0);
   const [running, setRunning] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   const ov = useLoad(api.overview);
@@ -25,15 +27,19 @@ export default function Queue({ user }: { user: Me }) {
       (!ql || [c.id, c.title, ...c.rules, ...c.users, ...c.hosts, ...c.ips, ...c.mitre].join(" ").toLowerCase().includes(ql)));
   }, [list.data, q, sev]);
 
-  useEffect(() => { memo.set("queue.order", rows.map((r) => r.id)); setSel((s) => Math.min(s, Math.max(0, rows.length - 1))); }, [rows]);
+  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const shown = useMemo(() => rows.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE), [rows, page]);
+  useEffect(() => { setPage(0); }, [tab, q, sev]);
+  useEffect(() => { memo.set("queue.order", rows.map((r) => r.id)); setSel((s) => Math.min(s, Math.max(0, shown.length - 1))); }, [rows, shown.length]);
 
   useKeys({
-    j: () => setSel((s) => Math.min(s + 1, rows.length - 1)),
-    k: () => setSel((s) => Math.max(s - 1, 0)),
-    Enter: () => rows[sel] && go(`case/${rows[sel].id}`),
-    o: () => rows[sel] && go(`case/${rows[sel].id}`),
+    // j past the last row on a page walks onto the next page, k past the first walks back
+    j: () => (sel + 1 < shown.length ? setSel(sel + 1) : page + 1 < pages && (setPage(page + 1), setSel(0))),
+    k: () => (sel > 0 ? setSel(sel - 1) : page > 0 && (setPage(page - 1), setSel(PER_PAGE - 1))),
+    Enter: () => shown[sel] && go(`case/${shown[sel].id}`),
+    o: () => shown[sel] && go(`case/${shown[sel].id}`),
     "/": () => search.current?.focus(),
-  }, [rows, sel]);
+  }, [shown, sel, page, pages]);
 
   const dist = useMemo(() => {
     const n: Record<string, number> = {};
@@ -93,10 +99,22 @@ export default function Queue({ user }: { user: Me }) {
             <div className="table-wrap">
               <table className="table">
                 <thead><tr><th>Severity</th><th className="right hide-sm">Risk</th><th>Case</th><th className="hide-sm">Entities</th><th className="hide-sm">Status</th><th className="right hide-sm">Last Seen</th></tr></thead>
-                <tbody>{rows.map((c, i) => <CaseRow key={c.id} c={c} selected={i === sel} onEntity={setQ} />)}</tbody>
+                <tbody>{shown.map((c, i) => <CaseRow key={c.id} c={c} selected={i === sel} onEntity={setQ} />)}</tbody>
               </table>
             </div>
           )}
+        {rows.length > PER_PAGE && (
+          <div className="card-head" style={{ borderTop: "1px solid var(--border)", borderBottom: "none" }}>
+            <span className="small faint">
+              {page * PER_PAGE + 1}-{Math.min(rows.length, (page + 1) * PER_PAGE)} of {rows.length}
+            </span>
+            <div className="row">
+              <button className="btn btn-ghost btn-sm" disabled={page === 0} onClick={() => { setPage(page - 1); setSel(0); }}>Previous</button>
+              <span className="small faint">Page {page + 1} of {pages}</span>
+              <button className="btn btn-ghost btn-sm" disabled={page + 1 >= pages} onClick={() => { setPage(page + 1); setSel(0); }}>Next</button>
+            </div>
+          </div>
+        )}
       </div>
       {rows.length > 0 && (
         <div className="row small faint" style={{ marginTop: 12, gap: 16 }}>

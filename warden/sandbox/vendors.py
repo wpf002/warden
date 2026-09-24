@@ -21,8 +21,11 @@ USERS = {login: {"id": f"00u{i:04d}", "login": login, "status": "ACTIVE", "sessi
          for i, login in enumerate(["jlee@corp.example", "asmith@corp.example", "mgarcia@corp.example",
                                     "john.doe@corp.example", "pwong@corp.example", "rkhan@corp.example",
                                     "tnguyen@corp.example", "dpatel@corp.example"], 1)}
+# demo hosts: the scenario fixtures plus the machines in the real attack recordings
 HOSTS = {h: {"device_id": f"dev{i:04d}", "hostname": h, "status": "normal"}
-         for i, h in enumerate(["ws-17", "ws-20", "ws-31", "ws-44", "ws-52", "fs-02", "srv-db-01", "dc-01"], 1)}
+         for i, h in enumerate(["ws-17", "ws-20", "ws-31", "ws-44", "ws-52", "fs-02", "srv-db-01", "dc-01",
+                                "msedgewin10", "iewin7", "pc01", "pc04", "win-77ltaphiq1r", "desktop1111",
+                                "elastichost"], 1)}
 LOG: list[dict] = []
 
 
